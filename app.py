@@ -1,7 +1,11 @@
 import json
 import os
+import random
 from datetime import date, datetime, timedelta
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except Exception:
+    genai = None
 from dotenv import load_dotenv
 
 from flask import Flask, flash, redirect, render_template, request, url_for, jsonify, session
@@ -11,7 +15,11 @@ import bcrypt
 from models import Assessment, MoodEntry, Recommendation, User, db, BreathingSession
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+if genai is not None:
+    try:
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    except Exception:
+        genai = None
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
@@ -244,6 +252,48 @@ def check_crisis_flag(user):
     return low_mood_count == 3 or high_score
 
 
+def get_supportive_fallback(lang="en"):
+    """Get bilingual fallback responses based on preferred language."""
+    if lang == "sw":
+        fallback_responses = [
+            "Nakuona na niko hapa kukusaidia. Niambie zaidi kuhusu jinsi unavyohisi leo.",
+            "Hujatengwa. Naweza kukusaidia kutuliza akili yako na kupata hatua moja ndogo ya mbele.",
+            "Ni sawa kuhisi hivi. Shiriki kitu kimoja ambacho kingefanya leo iwe rahisi kidogo.",
+            "Tuelekeze kile kinachohisi inawezekana sasa. Niko hapa kukusikiliza na kukutia moyo.",
+        ]
+    else:
+        fallback_responses = [
+            "I hear you and I'm here to support you. Tell me more about how you're feeling today.",
+            "You're not alone. I can help you calm your mind and find one small step forward.",
+            "It's okay to feel this way. Share one thing that would make today a little easier.",
+            "Let's focus on what feels manageable right now. I'm here to listen and encourage you.",
+        ]
+    return random.choice(fallback_responses)
+
+
+def get_recent_mood_summary(user, days=7):
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    entries = MoodEntry.query.filter(
+        MoodEntry.user_id == user.id,
+        MoodEntry.date >= start_date,
+        MoodEntry.date <= today
+    ).all()
+
+    if not entries:
+        return None
+
+    mood_total = sum(entry.mood_score for entry in entries)
+    stress_total = sum(entry.stress_level for entry in entries)
+    notes = [entry.note for entry in entries if entry.note]
+    return {
+        "days": len(entries),
+        "average_mood": round(mood_total / len(entries), 1),
+        "average_stress": round(stress_total / len(entries), 1),
+        "recent_note": notes[-1] if notes else None,
+    }
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -300,6 +350,14 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/set_language/<lang>")
+def set_language(lang):
+    """Set the user's language preference."""
+    if lang in ["en", "sw"]:
+        session["language"] = lang
+    return redirect(request.referrer or url_for("dashboard"))
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -319,6 +377,8 @@ def dashboard():
         mood_chart=json.dumps(mood_data),
         stress_chart=json.dumps(stress_data),
         crisis_detected=crisis_detected,
+        current_lang=get_language(),
+        t=TRANSLATIONS[get_language()],
     )
 
 
@@ -451,32 +511,199 @@ def breathing():
     
     return render_template("breathing.html", techniques=BREATHING_TECHNIQUES)
 
+
+KIRAYA_KB = {
+    "crisis_keywords_en": ["hurt myself", "kill myself", "suicide", "want to die", "end it", "can't take it"],
+    "crisis_keywords_sw": ["nidhuru", "kufa", "jiuapo", "kumalizia", "haiwezi"],
+    "befrienders": "0800 720 177",
+}
+
+
+# Language translations for UI
+TRANSLATIONS = {
+    "en": {
+        "dashboard": "Dashboard",
+        "assessment": "Assessment",
+        "mood_tracker": "Mood Tracker",
+        "recommendations": "Recommendations",
+        "emergency": "Emergency",
+        "logout": "Logout",
+        "login": "Login",
+        "register": "Register",
+        "language": "Language",
+        "english": "English",
+        "kiswahili": "Kiswahili",
+        "good_day": "Good day",
+        "todays_wellness": "Today's wellness snapshot",
+        "last_assessment": "Last assessment",
+        "todays_mood": "Today's mood",
+        "current_streak": "Current streak",
+        "days_of_checkins": "days of daily check-ins",
+        "no_assessment": "No assessment yet.",
+        "record_feelings": "Record your feelings in the mood tracker.",
+        "mood_label": "mood",
+        "stress_label": "stress",
+        "weekly_mood_chart": "Weekly mood chart",
+        "check_mental_health": "Check in with a quick mental health survey.",
+        "share_mood": "Share your mood, stress, and reflections.",
+        "get_support_tips": "Get support tips based on your latest score.",
+        "access_support": "Access urgent Kenya-specific support contacts.",
+        "ai_assistant": "AngazaCare AI",
+        "type_message": "Type a message...",
+        "send": "Send",
+        "ai_resting": "AngazaCare AI is resting, please try again",
+        "footer": "AngazaCare © 2026 — Mental health support that feels personal.",
+        "positive_mood": "Positive mood support",
+        "mild_support": "Mild support",
+        "moderate_support": "Moderate support",
+        "severe_support": "Severe support",
+        "email": "Email",
+        "password": "Password",
+        "name": "Name",
+        "submit": "Submit",
+        "create_account": "Create Account",
+        "sign_in": "Sign In",
+        "account_created": "Account created successfully. Please log in.",
+        "email_registered": "Email already registered.",
+        "invalid_credentials": "Invalid email or password.",
+        "logged_out": "You have been logged out.",
+    },
+    "sw": {
+        "dashboard": "Dashibodi",
+        "assessment": "Tathmini",
+        "mood_tracker": "Kufuatilia Hali ya Jini",
+        "recommendations": "Mapendekezo",
+        "emergency": "Dharura",
+        "logout": "Ondoka",
+        "login": "Ingia",
+        "register": "Jiandikishe",
+        "language": "Lugha",
+        "english": "English",
+        "kiswahili": "Kiswahili",
+        "good_day": "Habari",
+        "todays_wellness": "Picha ya afya yako leo",
+        "last_assessment": "Tathmini ya mwisho",
+        "todays_mood": "Hali ya jini leo",
+        "current_streak": "Kamba ya sasa",
+        "days_of_checkins": "siku za ukaguzi wa kila siku",
+        "no_assessment": "Hakuna tathmini bado.",
+        "record_feelings": "Rekodi hisia zako katika kufuatilia hali ya jini.",
+        "mood_label": "hali ya jini",
+        "stress_label": "msongo wa mawazo",
+        "weekly_mood_chart": "Chati ya hali ya jini ya kila wiki",
+        "check_mental_health": "Jaribu tathmini ya haraka ya afya ya akili.",
+        "share_mood": "Shiriki hali yako, msongo wa mawazo, na mawazo yako.",
+        "get_support_tips": "Pata vidokezo vya msaada kulingana na alama yako ya mwisho.",
+        "access_support": "Fikirini rasilimali za dharura za Kenya.",
+        "ai_assistant": "AI ya AngazaCare",
+        "type_message": "Andika ujumbe...",
+        "send": "Tuma",
+        "ai_resting": "AI ya AngazaCare inapumzika, tafadhali jaribu tena",
+        "footer": "AngazaCare © 2026 — Msaada wa afya ya akili ambao unajisikia binafsi.",
+        "positive_mood": "Msaada wa hali chanya",
+        "mild_support": "Msaada sawa",
+        "moderate_support": "Msaada wa kawaida",
+        "severe_support": "Msaada muhimu",
+        "email": "Barua pepe",
+        "password": "Nenosiri",
+        "name": "Jina",
+        "submit": "Wasilisha",
+        "create_account": "Unda Akaunti",
+        "sign_in": "Ingia",
+        "account_created": "Akaunti imefungua kwa mafanikio. Tafadhali ingia.",
+        "email_registered": "Barua pepe tayari imejisajili.",
+        "invalid_credentials": "Barua pepe au nenosiri batili.",
+        "logged_out": "Umebadilishwa kutoka.",
+    },
+}
+
+def get_language():
+    """Get the current language from session, default to English."""
+    return session.get("language", "en")
+
+def get_text(key):
+    """Get translated text for a key in the current language."""
+    lang = get_language()
+    return TRANSLATIONS.get(lang, {}).get(key, TRANSLATIONS["en"].get(key, key))
+
+
+def detect_language(text):
+    """Detect if text is primarily Kiswahili or English."""
+    sw_patterns = ["ni ", "na ", "wa ", "ku", "la ", "ta ", "za ", "ni\u0144", "jina"]
+    sw_count = sum(text.lower().count(p) for p in sw_patterns)
+    return "sw" if sw_count > 2 else "en"
+
+
+def has_crisis_markers(text):
+    """Check if message contains crisis indicators."""
+    text_lower = text.lower()
+    crisis_en = KIRAYA_KB["crisis_keywords_en"]
+    crisis_sw = KIRAYA_KB["crisis_keywords_sw"]
+    return any(kw in text_lower for kw in crisis_en + crisis_sw)
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    if not os.getenv("GEMINI_API_KEY"):
-        return jsonify({"reply": get_supportive_fallback()}), 200
-
     data = request.get_json(silent=True) or {}
     user_message = (data.get("message") or "").strip()
 
     if not user_message:
         return jsonify({"reply": "Please enter a message."}), 400
 
+    # Check for crisis markers first
+    if has_crisis_markers(user_message):
+        crisis_msg = (
+            f"I hear you and I care. Please reach Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, free)\\n\\n"
+            f"Nakuona na nakujali. Tafadhali wasiliana Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, bure)"
+        )
+        return jsonify({"reply": crisis_msg}), 200
+
+    if not genai or not os.getenv("GEMINI_API_KEY"):
+        fallback_reply = get_supportive_fallback()
+        # Use user's language preference for fallback if set
+        preferred_lang = get_language()
+        if preferred_lang == "sw":
+            # Swap to Kiswahili version if available
+            fallback_reply = get_supportive_fallback(lang="sw")
+        return jsonify({"reply": fallback_reply}), 200
+
+    # Use session language preference, or detect from message
+    user_lang = get_language()  # Gets preferred language from session
+    if user_lang == "en":
+        lang_instruction = "Respond in English."
+    else:
+        lang_instruction = "Respond in Kiswahili."
+
     system_prompt = (
-        "You are AngazaCare AI, a compassionate mental health companion. Respond with empathy and care. "
-        "Never diagnose. Always encourage professional help for serious concerns. Keep responses under 100 words."
+        "You are AngazaCare AI, a compassionate mental health companion for Kenyans. "
+        f"{lang_instruction} "
+        "Be concise (2-3 sentences), empathetic, and non-judgmental. Never diagnose. "
+        "Use warm, practical advice. When relevant, suggest one small action the user can take today. "
+        "Remind them they are not alone."
     )
 
     user_context = []
     if current_user.is_authenticated:
         last_assessment = Assessment.query.filter_by(user_id=current_user.id).order_by(Assessment.created_at.desc()).first()
         today_entry = MoodEntry.query.filter_by(user_id=current_user.id, date=date.today()).first()
+        mood_summary = get_recent_mood_summary(current_user)
         user_context.append(f"User: {current_user.name}")
-        user_context.append(f"Today's mood score: {today_entry.mood_score if today_entry else 'Not tracked'}")
+        if today_entry:
+            user_context.append(
+                f"Today's mood: {today_entry.mood_score}/5, stress: {today_entry.stress_level}/10."
+            )
+            if today_entry.note:
+                user_context.append(f"Today note: {today_entry.note}")
         if last_assessment:
             user_context.append(
-                f"Latest assessment score: {last_assessment.score} ({last_assessment.severity})"
+                f"Latest assessment: {last_assessment.score} ({last_assessment.severity})."
             )
+        if mood_summary:
+            user_context.append(
+                f"Last 7 days average mood: {mood_summary['average_mood']}/5, stress: {mood_summary['average_stress']}/10."
+            )
+            if mood_summary.get('recent_note'):
+                user_context.append(f"Recent note: {mood_summary['recent_note']}")
 
     if user_context:
         system_prompt = f"{system_prompt}\n\n" + "\n".join(user_context)
@@ -530,7 +757,7 @@ def mood_history():
 @app.route("/api/weekly-report")
 @login_required
 def weekly_report():
-    if not os.getenv("GEMINI_API_KEY"):
+    if not genai or not os.getenv("GEMINI_API_KEY"):
         return jsonify({"error": "AI is resting, try again"}), 500
     
     today = date.today()
@@ -559,24 +786,24 @@ def weekly_report():
     - Assessments: {len(assessments)}
     - Recent notes: {notes if notes else 'None'}
     """
-    
-    prompt = f"""You are a wellness coach. Based on this user's 7-day data:
-    {data_summary}
-    
-    Write a warm, encouraging 3-paragraph wellness report covering:
-    1. Overall emotional trends this week
-    2. Notable patterns or concerns (gently)
-    3. Three specific actionable recommendations
-    
-    Keep it under 200 words. Be warm and human."""
-    
+
+    prompt = (
+        "You are a wellness coach in AngazaCare. Respond in both English and Kiswahili and keep the tone warm, direct, and practical. "
+        "Use simple, encouraging language that feels culturally grounded and supportive. "
+        "Based on this user's 7-day data, include one clear trend, one concern or support need, and three actionable recommendations. "
+        "Keep the response under 200 words."
+    )
+
+    prompt = prompt + f"\n\nUser data:\n{data_summary}"
+
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt)
         report = response.text if response else "Unable to generate report at this time."
         return jsonify({"report": report})
     except Exception as e:
-        return jsonify({"error": "AI is resting, try again"}), 500
+        app.logger.exception("Weekly report generation failed")
+        return jsonify({"report": get_supportive_fallback()}), 200
 
 
 if __name__ == "__main__":

@@ -148,16 +148,22 @@
                 </div>
                 <div class="nav-links">
                     {% if current_user.is_authenticated %}
-                        <a href="/dashboard">Dashboard</a>
-                        <a href="/assessment">Assessment</a>
-                        <a href="/mood_tracker">Mood Tracker</a>
-                        <a href="/recommendations">Recommendations</a>
-                        <a href="/emergency">Emergency</a>
-                        <a href="/logout">Logout</a>
+                        <a href="/dashboard">{{ t.get('dashboard', 'Dashboard') if t else 'Dashboard' }}</a>
+                        <a href="/assessment">{{ t.get('assessment', 'Assessment') if t else 'Assessment' }}</a>
+                        <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') if t else 'Mood Tracker' }}</a>
+                        <a href="/recommendations">{{ t.get('recommendations', 'Recommendations') if t else 'Recommendations' }}</a>
+                        <a href="/emergency">{{ t.get('emergency', 'Emergency') if t else 'Emergency' }}</a>
+                        <a href="/logout">{{ t.get('logout', 'Logout') if t else 'Logout' }}</a>
                     {% else %}
-                        <a href="/login">Login</a>
-                        <a href="/register">Register</a>
+                        <a href="/login">{{ t.get('login', 'Login') if t else 'Login' }}</a>
+                        <a href="/register">{{ t.get('register', 'Register') if t else 'Register' }}</a>
                     {% endif %}
+                    <div class="lang-selector">
+                        <select id="lang-select" onchange="location.href='/set_language/' + this.value;" style="padding: 0.5rem; border-radius: 6px; border: 1px solid #64ffda; background: #0d1b2a; color: #64ffda; font-weight: 600; cursor: pointer;">
+                            <option value="en" {% if current_lang == 'en' %}selected{% endif %}>🇬🇧 English</option>
+                            <option value="sw" {% if current_lang == 'sw' %}selected{% endif %}>🇰🇪 Kiswahili</option>
+                        </select>
+                    </div>
                 </div>
             </nav>
         </div>
@@ -173,19 +179,19 @@
         {% block content %}{% endblock %}
     </main>
     <footer>
-        <p>AngazaCare &copy; 2026 — Mental health support that feels personal.</p>
+        <p>{{ t.get('footer', 'AngazaCare © 2026 — Mental health support that feels personal.') if t else 'AngazaCare © 2026 — Mental health support that feels personal.' }}</p>
     </footer>
 
     <div id="mw-ai-chat-container">
         <div class="mw-ai-header">
-            <span>AngazaCare AI</span>
+            <span>{{ t.get('ai_assistant', 'AngazaCare AI') if t else 'AngazaCare AI' }}</span>
             <button id="mw-close-chat" aria-label="Close chat window">×</button>
         </div>
         <div id="mw-ai-messages" class="mw-ai-messages"></div>
-        <div id="mw-ai-error" class="mw-ai-error" hidden>AngazaCare AI is resting, please try again</div>
+        <div id="mw-ai-error" class="mw-ai-error" hidden>{{ t.get('ai_resting', 'AngazaCare AI is resting, please try again') if t else 'AngazaCare AI is resting, please try again' }}</div>
         <form id="mw-ai-form" class="mw-ai-form">
-            <input id="mw-ai-input" type="text" placeholder="Type a message..." autocomplete="off" />
-            <button type="submit">Send</button>
+            <input id="mw-ai-input" type="text" placeholder="{{ t.get('type_message', 'Type a message...') if t else 'Type a message...' }}" autocomplete="off" />
+            <button type="submit">{{ t.get('send', 'Send') if t else 'Send' }}</button>
         </form>
     </div>
     <button id="mw-ai-bubble" aria-label="Open AngazaCare AI chat">AI</button>

@@ -2,54 +2,54 @@
 {% block content %}
 <section style="margin-top: 1rem;">
     <div class="card">
-        <p class="section-title">Good day, {{ current_user.name }}.</p>
-        <h2>Today’s wellness snapshot</h2>
+        <p class="section-title">{{ t.get('good_day', 'Good day') }}, {{ current_user.name }}.</p>
+        <h2>{{ t.get('todays_wellness', "Today's wellness snapshot") }}</h2>
         <p>{{ daily_quote }}</p>
     </div>
     <div class="grid summary-grid" style="margin-top: 1.5rem;">
         <div class="card small-card">
-            <h3>Last assessment</h3>
+            <h3>{{ t.get('last_assessment', 'Last assessment') }}</h3>
             {% if last_assessment %}
                 <p><strong>{{ last_assessment.score }}</strong> — {{ last_assessment.severity }}</p>
                 <p>{{ last_assessment.created_at.strftime('%b %d, %Y') }}</p>
             {% else %}
-                <p>No assessment yet.</p>
+                <p>{{ t.get('no_assessment', 'No assessment yet.') }}</p>
             {% endif %}
         </div>
         <div class="card small-card">
-            <h3>Today’s mood</h3>
+            <h3>{{ t.get('todays_mood', "Today's mood") }}</h3>
             {% if today_entry %}
-                <p><strong>{{ today_entry.mood_score }}/5</strong> mood</p>
-                <p><strong>{{ today_entry.stress_level }}/10</strong> stress</p>
+                <p><strong>{{ today_entry.mood_score }}/5</strong> {{ t.get('mood_label', 'mood') }}</p>
+                <p><strong>{{ today_entry.stress_level }}/10</strong> {{ t.get('stress_label', 'stress') }}</p>
             {% else %}
-                <p>Record your feelings in the mood tracker.</p>
+                <p>{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
             {% endif %}
         </div>
         <div class="card small-card">
-            <h3>Current streak</h3>
-            <p><strong>{{ streak }} days</strong> of daily check-ins</p>
+            <h3>{{ t.get('current_streak', 'Current streak') }}</h3>
+            <p><strong>{{ streak }} {{ t.get('days_of_checkins', 'days of daily check-ins') }}</strong></p>
         </div>
     </div>
     <div class="card" style="margin-top: 1.5rem;">
-        <h3>Weekly mood chart</h3>
+        <h3>{{ t.get('weekly_mood_chart', 'Weekly mood chart') }}</h3>
         <canvas id="dashboardChart" height="120"></canvas>
     </div>
     <div class="grid cards-4" style="margin-top: 1.5rem;">
         <div class="card small-card">
-            <h4><a href="/assessment">Assessment</a></h4>
-            <p>Check in with a quick mental health survey.</p>
+            <h4><a href="/assessment">{{ t.get('assessment', 'Assessment') }}</a></h4>
+            <p>{{ t.get('check_mental_health', 'Check in with a quick mental health survey.') }}</p>
         </div>
         <div class="card small-card">
-            <h4><a href="/mood_tracker">Mood Tracker</a></h4>
-            <p>Share your mood, stress, and reflections.</p>
+            <h4><a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') }}</a></h4>
+            <p>{{ t.get('share_mood', 'Share your mood, stress, and reflections.') }}</p>
         </div>
         <div class="card small-card">
-            <h4><a href="/recommendations">Recommendations</a></h4>
-            <p>Get support tips based on your latest score.</p>
+            <h4><a href="/recommendations">{{ t.get('recommendations', 'Recommendations') }}</a></h4>
+            <p>{{ t.get('get_support_tips', "Get support tips based on your latest score.") }}</p>
         </div>
         <div class="card small-card">
-            <h4><a href="/emergency">Emergency</a></h4>
-            <p>Access urgent Kenya-specific support contacts.</p>
+            <h4><a href="/emergency">{{ t.get('emergency', 'Emergency') }}</a></h4>
+            <p>{{ t.get('access_support', 'Access urgent Kenya-specific support contacts.') }}</p>
         </div>
     </div>
 </section>
