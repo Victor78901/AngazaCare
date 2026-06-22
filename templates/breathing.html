@@ -2,18 +2,18 @@
 
 {% block content %}
 <div class="breathing-container">
-  <h1>Guided Breathing Exercise</h1>
-  <p class="subtitle">Find calm with guided breathing techniques</p>
+  <h1>{{ t.get('breathing_title', 'Guided Breathing Exercise') }}</h1>
+  <p class="subtitle">{{ t.get('breathing_subtitle', 'Find calm with guided breathing techniques') }}</p>
 
   <div class="breathing-content">
     <div class="technique-selector">
-      <label for="technique">Choose a technique:</label>
+      <label for="technique">{{ t.get('choose_technique', 'Choose a technique:') }}</label>
       <select id="technique" onchange="selectTechnique(this.value)">
         <option value="box">Box Breathing (4-4-4-4)</option>
         <option value="478">4-7-8 Breathing</option>
         <option value="deep">Deep Breathing (4-2-6)</option>
       </select>
-      <p class="technique-description" id="techDescription">Box breathing helps calm your nervous system by creating a steady rhythm.</p>
+      <p class="technique-description" id="techDescription">{{ t.get('box_description', 'Box breathing helps calm your nervous system by creating a steady rhythm.') }}</p>
     </div>
 
     <div class="breathing-animation">
@@ -24,10 +24,10 @@
     </div>
 
     <div class="breathing-controls">
-      <button id="startBtn" onclick="startBreathing()" class="btn btn-primary">Start Session</button>
-      <button id="pauseBtn" onclick="pauseBreathing()" class="btn btn-secondary" style="display: none;">Pause</button>
-      <button id="resumeBtn" onclick="resumeBreathing()" class="btn btn-secondary" style="display: none;">Resume</button>
-      <button id="resetBtn" onclick="resetBreathing()" class="btn btn-secondary">Reset</button>
+      <button id="startBtn" onclick="startBreathing()" class="btn btn-primary">{{ t.get('start_session', 'Start Session') }}</button>
+      <button id="pauseBtn" onclick="pauseBreathing()" class="btn btn-secondary" style="display: none;">{{ t.get('pause', 'Pause') }}</button>
+      <button id="resumeBtn" onclick="resumeBreathing()" class="btn btn-secondary" style="display: none;">{{ t.get('resume', 'Resume') }}</button>
+      <button id="resetBtn" onclick="resetBreathing()" class="btn btn-secondary">{{ t.get('reset', 'Reset') }}</button>
     </div>
 
     <div class="duration-selector">
@@ -38,19 +38,19 @@
     <form id="saveForm" method="POST" onsubmit="submitBreathingSession(event)" style="display: none;">
       <input type="hidden" id="techniqueInput" name="technique" value="box" />
       <input type="hidden" id="durationInput" name="duration" value="5" />
-      <button type="submit" class="btn btn-success">Save Session</button>
+      <button type="submit" class="btn btn-success">{{ t.get('save_session', 'Save Session') }}</button>
     </form>
-    <button id="saveBtn" onclick="showSaveForm()" class="btn btn-success" style="display: none;">Save Session</button>
+    <button id="saveBtn" onclick="showSaveForm()" class="btn btn-success" style="display: none;">{{ t.get('save_session', 'Save Session') }}</button>
   </div>
 
   <div class="breathing-tips">
-    <h3>Tips for Better Breathing</h3>
+    <h3>{{ t.get('tips_breathing', 'Tips for Better Breathing') }}</h3>
     <ul>
-      <li>Find a comfortable position, sitting or lying down</li>
-      <li>Breathe through your nose if possible</li>
-      <li>Don't force your breath—let it flow naturally</li>
-      <li>Practice consistently for best results</li>
-      <li>Use this daily for better stress management</li>
+      <li>{{ t.get('tip_position', 'Find a comfortable position, sitting or lying down') }}</li>
+      <li>{{ t.get('tip_nose', 'Breathe through your nose if possible') }}</li>
+      <li>{{ t.get('tip_natural', "Don't force your breath—let it flow naturally") }}</li>
+      <li>{{ t.get('tip_consistency', 'Practice consistently for best results') }}</li>
+      <li>{{ t.get('tip_daily', 'Use this daily for better stress management') }}</li>
     </ul>
   </div>
 </div>
@@ -63,9 +63,9 @@ const TECHNIQUES = {
 };
 
 const DESCRIPTIONS = {
-  box: "Box breathing helps calm your nervous system by creating a steady rhythm.",
-  "478": "4-7-8 breathing activates your parasympathetic nervous system for deep relaxation.",
-  deep: "Deep breathing increases oxygen flow and reduces stress and anxiety."
+  box: "{{ t.get('box_description', 'Box breathing helps calm your nervous system by creating a steady rhythm.') }}",
+  "478": "{{ t.get('four_seven_eight_description', '4-7-8 breathing activates your parasympathetic nervous system for deep relaxation.') }}",
+  deep: "{{ t.get('deep_description', 'Deep breathing increases oxygen flow and reduces stress and anxiety.') }}"
 };
 
 let currentTechnique = "box";

@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card" style="max-width: 900px; margin: 2rem auto;">
-    <h2>Mental Health Assessment</h2>
-    <p>Answer each statement based on how you've felt over the past two weeks.</p>
+    <h2>{{ t.get('assessment_title', 'Mental Health Assessment') }}</h2>
+    <p>{{ t.get('assessment_description', "Answer each statement based on how you've felt over the past two weeks.") }}</p>
     <form method="POST">
         {% for question in questions %}
             {% set qname = 'q' ~ loop.index0 %}
             <div class="form-field">
                 <label>{{ loop.index }}. {{ question }}</label>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
-                    {% for value, label in [(0,'Not at all'),(1,'Several days'),(2,'More than half the days'),(3,'Nearly every day')] %}
+                    {% for value, label in [(0, t.get('not_at_all', 'Not at all')), (1, t.get('several_days', 'Several days')), (2, t.get('more_than_half', 'More than half the days')), (3, t.get('nearly_every_day', 'Nearly every day'))] %}
                         <label class="assessment-option">
                             <input type="radio" name="{{ qname }}" value="{{ value }}" {% if value == 0 %}checked{% endif %} />
                             <span class="assessment-option-title">{{ value }} — {{ label }}</span>
@@ -18,7 +18,7 @@
                 </div>
             </div>
         {% endfor %}
-        <button class="btn" type="submit">Submit Assessment</button>
+        <button class="btn" type="submit">{{ t.get('submit_assessment', 'Submit Assessment') }}</button>
     </form>
     {% if result %}
         <div class="feedback-box" style="background: {{ result.color }};">

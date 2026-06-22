@@ -2,38 +2,38 @@
 {% block content %}
 <section class="hero">
     <div>
-        <p class="section-title">Welcome to AngazaCare</p>
-        <h1>Track your mood, manage stress, and find calm support.</h1>
-        <p>AngazaCare helps you understand your emotional health with assessment tools, daily mood tracking, and personalized wellness guidance.</p>
-        <a class="btn" href="/register">Get Started</a>
+        <p class="section-title">{{ t.get('welcome_title', 'Welcome to AngazaCare') }}</p>
+        <h1>{{ t.get('welcome_headline', 'Track your mood, manage stress, and find calm support.') }}</h1>
+        <p>{{ t.get('welcome_description', 'AngazaCare helps you understand your emotional health with assessment tools, daily mood tracking, and personalized wellness guidance.') }}</p>
+        <a class="btn" href="/register">{{ t.get('get_started', 'Get Started') }}</a>
     </div>
     <div class="card" style="background: rgba(132, 169, 140, 0.08);">
-        <h2>Features</h2>
+        <h2>{{ t.get('features', 'Features') }}</h2>
         <ul style="padding-left: 1.15rem; line-height: 1.8;">
-            <li>Secure login and personal progress dashboard</li>
-            <li>PHQ-9 style mental health assessment</li>
-            <li>Daily mood and stress logging with charts</li>
-            <li>Support recommendations and emergency contacts</li>
+            <li>{{ t.get('feature_secure', 'Secure login and personal progress dashboard') }}</li>
+            <li>{{ t.get('feature_assessment', 'PHQ-9 style mental health assessment') }}</li>
+            <li>{{ t.get('feature_mood_logging', 'Daily mood and stress logging with charts') }}</li>
+            <li>{{ t.get('feature_support', 'Support recommendations and emergency contacts') }}</li>
         </ul>
     </div>
 </section>
 
 <section class="grid cards-4" style="margin-top: 2rem;">
     <div class="card small-card">
-        <h3>Daily check-ins</h3>
-        <p>Log mood, stress, and note your feelings in one place.</p>
+        <h3>{{ t.get('daily_checkins', 'Daily check-ins') }}</h3>
+        <p>{{ t.get('daily_checkins_description', 'Log mood, stress, and note your feelings in one place.') }}</p>
     </div>
     <div class="card small-card">
-        <h3>Insightful charts</h3>
-        <p>See your weekly trends and understand what affects your wellbeing.</p>
+        <h3>{{ t.get('insightful_charts', 'Insightful charts') }}</h3>
+        <p>{{ t.get('insightful_charts_description', 'See your weekly trends and understand what affects your wellbeing.') }}</p>
     </div>
     <div class="card small-card">
-        <h3>Guided recommendations</h3>
-        <p>Receive thoughtful tips based on your assessment score.</p>
+        <h3>{{ t.get('guided_recommendations', 'Guided recommendations') }}</h3>
+        <p>{{ t.get('guided_recommendations_description', 'Receive thoughtful tips based on your assessment score.') }}</p>
     </div>
     <div class="card small-card">
-        <h3>Emergency resources</h3>
-        <p>Access urgent Kenya-specific contacts when you need them.</p>
+        <h3>{{ t.get('emergency_resources', 'Emergency resources') }}</h3>
+        <p>{{ t.get('emergency_resources_description', 'Access urgent Kenya-specific contacts when you need them.') }}</p>
     </div>
 </section>
 {% endblock %}

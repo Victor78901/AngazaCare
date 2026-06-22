@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card" style="max-width: 540px; margin: 2rem auto;">
-    <h2>Login</h2>
+    <h2>{{ t.get('login_title', 'Login') }}</h2>
     <form method="POST">
         <div class="form-field">
-            <label for="email">Email</label>
+            <label for="email">{{ t.get('email', 'Email') }}</label>
             <input type="email" name="email" id="email" required />
         </div>
         <div class="form-field">
-            <label for="password">Password</label>
+            <label for="password">{{ t.get('password', 'Password') }}</label>
             <input type="password" name="password" id="password" required />
         </div>
-        <button class="btn" type="submit">Login</button>
+        <button class="btn" type="submit">{{ t.get('login_button', 'Login') }}</button>
     </form>
-    <p style="margin-top: 1rem;">Need an account? <a href="/register">Register here</a>.</p>
+    <p style="margin-top: 1rem;">{{ t.get('need_account', 'Need an account?') }} <a href="/register">{{ t.get('register_here', 'Register here') }}</a>.</p>
 </div>
 {% endblock %}

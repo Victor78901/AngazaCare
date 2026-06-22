@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card" style="max-width: 900px; margin: 2rem auto;">
-    <h2>Wellness Recommendations</h2>
+    <h2>{{ t.get('recommendations_title', 'Wellness Recommendations') }}</h2>
     {% if assessment %}
-        <p>Your last assessment score was <strong>{{ assessment.score }}</strong> ({{ assessment.severity }}).</p>
+        <p>{{ t.get('last_assessment_score', 'Your last assessment score was') }} <strong>{{ assessment.score }}</strong> ({{ assessment.severity }}).</p>
         <div class="card-list">
             {% for tip in tips %}
                 <div class="card small-card">
@@ -12,7 +12,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <p>No assessment recorded yet. Complete an <a href="/assessment">assessment</a> to receive tailored tips.</p>
+        <p>{{ t.get('no_assessment_recorded', 'No assessment recorded yet.') }} {{ t.get('complete_assessment', 'Complete an') }} <a href="/assessment">{{ t.get('assessment_link', 'assessment') }}</a> {{ t.get('to_receive_tips', 'to receive tailored tips.') }}</p>
     {% endif %}
 </div>
 {% endblock %}

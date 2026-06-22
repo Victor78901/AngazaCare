@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card" style="max-width: 880px; margin: 2rem auto;">
-    <h2>Daily Mood Tracker</h2>
+    <h2>{{ t.get('mood_tracker_title', 'Daily Mood Tracker') }}</h2>
     <form method="POST">
         <div class="form-field">
-            <label for="mood_score">Mood Score</label>
+            <label for="mood_score">{{ t.get('mood_score', 'Mood Score') }}</label>
             <select name="mood_score" id="mood_score" required>
                 {% for value, label in [(1,'😔 1'),(2,'😐 2'),(3,'🙂 3'),(4,'😊 4'),(5,'😄 5')] %}
                     <option value="{{ value }}" {% if today_entry and today_entry.mood_score == value %}selected{% endif %}>{{ label }}</option>
@@ -12,14 +12,14 @@
             </select>
         </div>
         <div class="form-field">
-            <label for="stress_level">Stress level <span id="stressValue"></span></label>
+            <label for="stress_level">{{ t.get('stress_level', 'Stress level') }} <span id="stressValue"></span></label>
             <input type="range" name="stress_level" id="stress_level" min="1" max="10" value="{{ today_entry.stress_level if today_entry else 5 }}" />
         </div>
         <div class="form-field">
-            <label for="note">Journal note (optional)</label>
-            <textarea name="note" id="note" placeholder="How are you feeling today?">{% if today_entry %}{{ today_entry.note }}{% endif %}</textarea>
+            <label for="note">{{ t.get('journal_note', 'Journal note (optional)') }}</label>
+            <textarea name="note" id="note" placeholder="{{ t.get('note_placeholder', 'How are you feeling today?') }}">{% if today_entry %}{{ today_entry.note }}{% endif %}</textarea>
         </div>
-        <button class="btn" type="submit">Save Mood</button>
+        <button class="btn" type="submit">{{ t.get('save_mood', 'Save Mood') }}</button>
     </form>
 </div>
 

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Patient #{{ patient.id }}</h1>
+<p>Name: <span class="blurred-text">{{ masked_name }}</span></p>
+<p>Email: <span class="blurred-text">{{ masked_email }}</span></p>
+<p>Consent to clinician review: {{ 'Yes' if patient.consent_to_clinician_review else 'No' }}</p>
+
+<div class="card admin-ai-card">
+    <h2>AI Summary</h2>
+    <div class="ai-summary-block">
+        <h3>Prompt</h3>
+        <pre>{{ ai_summary.prompt }}</pre>
+    </div>
+    <div class="ai-summary-block">
+        <h3>Response</h3>
+        <p>{{ ai_summary.response }}</p>
+    </div>
+</div>
+
+{% if not full_access %}
+<div class="alert alert-warning">Full record access denied by patient consent.</div>
+{% endif %}
+
+<h2>Assessments</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Score</th>
+            <th>Severity</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in assessments %}
+        <tr {% if a.score >= 20 %}style="background:#331f24; color:#fff;"{% endif %}>
+            <td>{{ a.date }}</td>
+            <td>{{ a.score }}</td>
+            <td>{{ a.severity }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Recent Mood Entries</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Mood</th>
+            <th>Stress</th>
+            <th>Note</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in mood_entries %}
+        <tr {% if m.mood_score == 1 %}style="background:#331f24; color:#fff;"{% endif %}>
+            <td>{{ m.date }}</td>
+            <td>{{ m.mood_score }}</td>
+            <td>{{ m.stress_level }}</td>
+            <td>{{ m.note if m.note else 'Not available' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin Dashboard</h1>
+<p>Assigned patients list:</p>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Patient</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Consent</th>
+            <th>AI Summary</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in patients %}
+        <tr>
+            <td>Patient #{{ p.id }}</td>
+            <td><span class="blurred-text">{{ p.masked_name }}</span></td>
+            <td><span class="blurred-text">{{ p.masked_email }}</span></td>
+            <td>{{ 'Yes' if p.consent_to_clinician_review else 'No' }}</td>
+            <td>{{ p.ai_summary.response }}</td>
+            <td><a href="/admin/user/{{ p.id }}" class="btn">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
