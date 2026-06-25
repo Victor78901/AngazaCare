@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: angazacare
+    env: docker
+    dockerfilePath: Dockerfile
+    branch: master
+    autoDeploy: true
+    envVars:
+      - key: USE_FALLBACK_ONLY
+        value: "true"
+    secretEnvVars:
+      - GEMINI_API_KEY

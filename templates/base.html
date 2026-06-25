@@ -25,6 +25,23 @@
             place-items: center;
             z-index: 9999;
         }
+        #mw-ai-voice-btn {
+            position: fixed;
+            bottom: 88px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: #ff8a64;
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+            z-index: 9998;
+        }
         #mw-ai-chat-container {
             position: fixed;
             bottom: 90px;
@@ -91,6 +108,7 @@
         .mw-ai-form {
             display: flex;
             gap: 8px;
+            align-items: center;
             padding: 14px 16px 16px;
             background: #07101f;
         }
@@ -112,6 +130,20 @@
             color: #fff;
             cursor: pointer;
             font-weight: 700;
+        }
+        .mw-ai-form button.mw-ai-mic {
+            width: 44px;
+            min-width: 44px;
+            padding: 0;
+            border-radius: 50%;
+            font-size: 1rem;
+            background: #497b7b;
+            display: grid;
+            place-items: center;
+        }
+        .mw-ai-form button.mw-ai-mic:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .mw-ai-error {
             padding: 12px 16px;
@@ -193,22 +225,174 @@
         <div id="mw-ai-messages" class="mw-ai-messages"></div>
         <div id="mw-ai-error" class="mw-ai-error" hidden>{{ t.get('ai_resting', 'AngazaCare AI is resting, please try again') if t else 'AngazaCare AI is resting, please try again' }}</div>
         <form id="mw-ai-form" class="mw-ai-form">
+            <button type="button" id="mw-ai-mic" class="mw-ai-mic" aria-label="{{ t.get('voice_input_start', 'Start voice input') if t else 'Start voice input' }}">🎤</button>
             <input id="mw-ai-input" type="text" placeholder="{{ t.get('type_message', 'Type a message...') if t else 'Type a message...' }}" autocomplete="off" />
             <button type="submit">{{ t.get('send', 'Send') if t else 'Send' }}</button>
         </form>
     </div>
     <button id="mw-ai-bubble" aria-label="Open AngazaCare AI chat">AI</button>
+    <button id="mw-ai-voice-btn" aria-label="{{ t.get('voice_chat_button', 'Voice Chat') if t else 'Voice Chat' }}">🎧</button>
 
     <script>
         const mwChatContainer = document.getElementById('mw-ai-chat-container');
         const mwChatBubble = document.getElementById('mw-ai-bubble');
+        const mwVoiceButton = document.getElementById('mw-ai-voice-btn');
         const mwCloseButton = document.getElementById('mw-close-chat');
+        const mwMicButton = document.getElementById('mw-ai-mic');
         const mwMessages = document.getElementById('mw-ai-messages');
         const mwForm = document.getElementById('mw-ai-form');
         const mwInput = document.getElementById('mw-ai-input');
         const mwError = document.getElementById('mw-ai-error');
 
+        const mwTranslations = {
+            aiResting: {{ t.get('ai_resting', 'AngazaCare AI is resting, please try again')|tojson }},
+            typeMessageEmpty: {{ t.get('type_message_empty', 'Please type a message to send.')|tojson }},
+            voiceStart: {{ t.get('voice_input_start', 'Tap the mic and speak.')|tojson }},
+            voiceStop: {{ t.get('voice_input_stop', 'Stop listening')|tojson }},
+            voiceUnsupported: {{ t.get('voice_input_unsupported', 'Voice input is not supported in this browser.')|tojson }},
+            voiceListening: {{ t.get('voice_input_listening', 'Listening...')|tojson }},
+            voiceUnavailable: {{ t.get('voice_input_unavailable', 'Your browser cannot use voice input at the moment.')|tojson }},
+            voiceError: {{ t.get('voice_input_error', 'There was an error with voice recognition. Please try again.')|tojson }},
+        };
+
         const chatHistory = [];
+        let recognition = null;
+        let isListening = false;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const speechSupported = !!SpeechRecognition;
+
+        function updateMicState() {
+            if (!speechSupported) {
+                mwMicButton.disabled = true;
+                mwMicButton.title = mwTranslations.voiceUnsupported;
+                mwMicButton.textContent = '🎤';
+                return;
+            }
+            if (isListening) {
+                mwMicButton.title = mwTranslations.voiceStop;
+                mwMicButton.textContent = '⏹️';
+            } else {
+                mwMicButton.title = mwTranslations.voiceStart;
+                mwMicButton.textContent = '🎤';
+            }
+        }
+
+        function speakText(text) {
+            if (!('speechSynthesis' in window) || !text) {
+                return;
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = document.documentElement.lang === 'sw' ? 'sw-KE' : 'en-US';
+            utterance.rate = 1;
+            utterance.pitch = 1;
+            utterance.volume = 1;
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function handleRecognitionResult(event) {
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                transcript += event.results[i][0].transcript;
+            }
+            
+            if (transcript) {
+                // Only submit on final results, not interim
+                if (event.results[event.results.length - 1].isFinal) {
+                    console.log('Final transcript:', transcript);
+                    mwInput.value = transcript;
+                    mwForm.dispatchEvent(new Event('submit', { cancelable: true }));
+                } else {
+                    // Show interim results in the input field
+                    mwInput.value = transcript;
+                    console.log('Interim transcript:', transcript);
+                }
+            }
+        }
+
+        async function startRecognition() {
+            if (!speechSupported) {
+                showError(mwTranslations.voiceUnsupported);
+                return;
+            }
+            
+            // Request microphone permission (important for mobile)
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (permError) {
+                console.error('Microphone permission denied:', permError);
+                showError('Microphone permission denied. Please enable it in your browser settings.');
+                return;
+            }
+            
+            if (!recognition) {
+                recognition = new SpeechRecognition();
+                recognition.lang = document.documentElement.lang === 'sw' ? 'sw-KE' : 'en-US';
+                recognition.continuous = false;
+                recognition.interimResults = true;
+                recognition.maxAlternatives = 1;
+                recognition.addEventListener('result', handleRecognitionResult);
+                recognition.addEventListener('end', () => {
+                    isListening = false;
+                    updateMicState();
+                });
+                recognition.addEventListener('error', (event) => {
+                    isListening = false;
+                    updateMicState();
+                    console.error('Speech recognition error:', event.error);
+                    const errorMsg = getErrorMessage(event.error);
+                    showError(errorMsg);
+                });
+                recognition.addEventListener('start', () => {
+                    console.log('Speech recognition started');
+                });
+            }
+            try {
+                recognition.start();
+                isListening = true;
+                updateMicState();
+                showError(mwTranslations.voiceListening);
+            } catch (error) {
+                console.error('Recognition start error:', error);
+                showError(mwTranslations.voiceUnavailable);
+            }
+        }
+        
+        function getErrorMessage(errorCode) {
+            const errors = {
+                'no-speech': 'No speech detected. Please try again.',
+                'audio-capture': 'No microphone found. Check your device settings.',
+                'network': 'Network error. Check your connection.',
+                'permission-denied': 'Microphone access denied.',
+                'service-not-allowed': 'Speech recognition service not available.',
+                'network-error': 'Network error occurred.',
+                'aborted': 'Speech recognition was cancelled.',
+            };
+            return errors[errorCode] || mwTranslations.voiceError || 'Voice input error. Please try again.';
+        }
+
+        function stopRecognition() {
+            if (recognition && isListening) {
+                recognition.stop();
+            }
+        }
+
+        mwMicButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (!speechSupported) {
+                showError(mwTranslations.voiceUnsupported);
+                return;
+            }
+            if (isListening) {
+                stopRecognition();
+            } else {
+                hideError();
+                startRecognition();
+            }
+        });
+
+        updateMicState();
 
         function renderMessage(text, sender, isLoading = false) {
             const messageEl = document.createElement('div');
@@ -234,6 +418,18 @@
         function showError(message) {
             mwError.textContent = message;
             mwError.hidden = false;
+            // Auto-hide non-error messages after 3 seconds
+            if (message === mwTranslations.voiceListening) {
+                setTimeout(() => {
+                    if (mwError.textContent === message) {
+                        mwError.hidden = true;
+                    }
+                }, 3000);
+            }
+        }
+        
+        function hideError() {
+            mwError.hidden = true;
         }
 
         function hideError() {
@@ -259,12 +455,30 @@
             mwChatContainer.classList.remove('open');
         });
 
+        mwVoiceButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (!mwChatContainer.classList.contains('open')) {
+                mwChatContainer.classList.add('open');
+                mwInput.focus();
+            }
+            if (!speechSupported) {
+                showError(mwTranslations.voiceUnsupported);
+                return;
+            }
+            if (isListening) {
+                stopRecognition();
+            } else {
+                hideError();
+                startRecognition();
+            }
+        });
+
         mwForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             hideError();
             const message = mwInput.value.trim();
             if (!message) {
-                showError('Please type a message to send.');
+                showError(mwTranslations.typeMessageEmpty || 'Please type a message to send.');
                 return;
             }
 
@@ -283,18 +497,19 @@
                 });
 
                 const data = await response.json();
-                const reply = data.reply || 'AngazaCare AI is resting, please try again';
+                const reply = data.reply || mwTranslations.aiResting;
                 loadingMessage.textContent = reply;
                 loadingMessage.className = 'mw-ai-message ai';
                 addHistoryEntry(reply, 'ai');
+                speakText(reply);
                 if (!response.ok) {
-                    showError('AngazaCare AI is resting, please try again');
+                    showError(mwTranslations.aiResting);
                 }
             } catch (error) {
-                loadingMessage.textContent = 'AngazaCare AI is resting, please try again';
+                loadingMessage.textContent = mwTranslations.aiResting;
                 loadingMessage.className = 'mw-ai-message ai';
-                addHistoryEntry('AngazaCare AI is resting, please try again', 'ai');
-                showError('AngazaCare AI is resting, please try again');
+                addHistoryEntry(mwTranslations.aiResting, 'ai');
+                showError(mwTranslations.aiResting);
             }
         });
     </script>

@@ -16,6 +16,19 @@ Run the app:
 python app.py
 ```
 
+Run with Docker:
+
+```bash
+docker build -t angazacare .
+docker run --rm -p 5000:5000 --env-file .env angazacare
+```
+
+Or use Docker Compose:
+
+```bash
+docker compose up --build
+```
+
 Visit http://localhost:5000
 
 Login with:

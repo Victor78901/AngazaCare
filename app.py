@@ -1,7 +1,10 @@
 import json
+import math
 import os
 import random
 import sqlite3
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, timedelta
 try:
     import google.generativeai as genai
@@ -25,7 +28,11 @@ from models import (
 )
 
 load_dotenv()
-if genai is not None:
+
+# Set to True to use fallback responses only (when API quota is exhausted)
+USE_FALLBACK_ONLY = os.getenv("USE_FALLBACK_ONLY", "false").lower() == "true"
+
+if genai is not None and not USE_FALLBACK_ONLY:
     try:
         genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
     except Exception:
@@ -94,7 +101,8 @@ ASSESSMENT_LEVELS = [
     (0, 4, "Minimal", "You are doing well. Keep supporting your mental health with healthy habits.", "#64ffda"),
     (5, 9, "Mild", "Some stress may be present. Light self-care and reflection can help.", "#ffc864"),
     (10, 14, "Moderate", "Consider sharing your feelings with a trusted person or professional.", "#ff8a64"),
-    (15, 30, "Severe", "Urgent support is recommended. Reach out to a mental health professional.", "#ff6464"),
+    (15, 19, "Moderately severe", "More support may be helpful. Reach out to someone you trust and keep monitoring your wellbeing.", "#ff7b4d"),
+    (20, 27, "Severe", "Urgent support is recommended. Reach out to a mental health professional or emergency services.", "#ff6464"),
 ]
 
 RECOMMENDATION_RULES = [
@@ -158,7 +166,95 @@ def get_assessment_level(score):
     for minimum, maximum, label, message, color in ASSESSMENT_LEVELS:
         if minimum <= score <= maximum:
             return {"label": label, "message": message, "color": color}
-    return ASSESSMENT_LEVELS[-1]
+    return {"label": ASSESSMENT_LEVELS[-1][2], "message": ASSESSMENT_LEVELS[-1][3], "color": ASSESSMENT_LEVELS[-1][4]}
+
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    radius_km = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return radius_km * c
+
+
+def format_osm_address(tags):
+    address_parts = []
+    for key in ["addr:housenumber", "addr:street", "addr:suburb", "addr:city", "addr:state", "addr:postcode"]:
+        value = tags.get(key)
+        if value:
+            address_parts.append(value)
+    return ", ".join(address_parts) if address_parts else tags.get("name", "Address unavailable")
+
+
+def query_overpass_hospitals(lat, lng):
+    overpass_query = f"""
+[out:json][timeout:25];
+(
+  node["amenity"="hospital"](around:10000,{lat},{lng});
+  way["amenity"="hospital"](around:10000,{lat},{lng});
+  relation["amenity"="hospital"](around:10000,{lat},{lng});
+  node["healthcare"="clinic"](around:10000,{lat},{lng});
+  way["healthcare"="clinic"](around:10000,{lat},{lng});
+  relation["healthcare"="clinic"](around:10000,{lat},{lng});
+);
+out center tags;
+"""
+    payload = urllib.parse.urlencode({"data": overpass_query}).encode("utf-8")
+    request_obj = urllib.request.Request(
+        "https://overpass-api.de/api/interpreter",
+        data=payload,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": "AngazaCare/1.0 (https://angazacare.example)"
+        },
+    )
+    with urllib.request.urlopen(request_obj, timeout=25) as response:
+        return json.loads(response.read())
+
+
+def parse_overpass_elements(elements, user_lat, user_lng):
+    facilities = []
+    for element in elements:
+        tags = element.get("tags", {})
+        center = element.get("center") or {}
+        lat = center.get("lat") if center else element.get("lat")
+        lon = center.get("lon") if center else element.get("lon")
+        if lat is None or lon is None:
+            continue
+        distance_km = haversine_distance(user_lat, user_lng, float(lat), float(lon))
+        name = tags.get("name") or tags.get("healthcare") or tags.get("amenity") or "Unknown facility"
+        facilities.append({
+            "name": name,
+            "address": format_osm_address(tags),
+            "distance": round(distance_km, 1),
+            "lat": float(lat),
+            "lng": float(lon),
+            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}",
+        })
+    return sorted(facilities, key=lambda f: f["distance"])[:10]
+
+
+def query_geocode(query, limit=5):
+    params = {
+        "q": query,
+        "format": "json",
+        "limit": str(limit),
+        "addressdetails": "1",
+    }
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
+    request_obj = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "AngazaCare/1.0 (https://angazacare.example)",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request_obj, timeout=20) as response:
+        return json.loads(response.read())
 
 
 def migrate_db():
@@ -758,9 +854,90 @@ def recommendations():
             Recommendation.score_range_max >= last_assessment.score,
         ).first()
         tips = json.loads(recommendation.tips) if recommendation else []
+        severity_data = get_assessment_level(last_assessment.score)
     else:
         tips = []
-    return render_template("recommendations.html", tips=tips, assessment=last_assessment)
+        severity_data = None
+    return render_template(
+        "recommendations.html",
+        tips=tips,
+        assessment=last_assessment,
+        severity_data=severity_data,
+        current_lang=get_language(),
+        t=TRANSLATIONS[get_language()],
+    )
+
+
+@app.route("/api/recommend", methods=["POST"])
+@login_required
+def api_recommend():
+    data = request.get_json(silent=True) or {}
+    score = data.get("score")
+    lat = data.get("lat")
+    lng = data.get("lng")
+
+    try:
+        score = int(score)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid score."}), 400
+
+    if lat is None or lng is None:
+        return jsonify({"error": "Location coordinates are required."}), 400
+
+    try:
+        user_lat = float(lat)
+        user_lng = float(lng)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid coordinates."}), 400
+
+    try:
+        os_data = query_overpass_hospitals(user_lat, user_lng)
+    except Exception as e:
+        app.logger.exception(f"Overpass lookup failed: {e}")
+        return jsonify({"error": "Facility lookup failed. Please try again later."}), 502
+
+    elements = os_data.get("elements", [])
+    facilities = parse_overpass_elements(elements, user_lat, user_lng)
+
+    response = {
+        "score": score,
+        "severity": get_assessment_level(score)["label"],
+        "message": get_assessment_level(score)["message"],
+        "facilities": facilities,
+    }
+
+    if not facilities:
+        response["fallback"] = {
+            "helpline": KIRAYA_KB["befrienders"],
+            "text": "No nearby hospitals or clinics were found within 10 km. Please use local emergency resources or view the Emergency section.",
+        }
+
+    return jsonify(response), 200
+
+
+@app.route("/api/geocode", methods=["POST"])
+@login_required
+def api_geocode():
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "Location query is required."}), 400
+
+    try:
+        results = query_geocode(query, limit=5)
+        formatted_results = [
+            {
+                "display_name": item.get("display_name"),
+                "lat": item.get("lat"),
+                "lon": item.get("lon"),
+            }
+            for item in results
+            if item.get("lat") and item.get("lon")
+        ]
+        return jsonify({"results": formatted_results}), 200
+    except Exception as e:
+        app.logger.exception(f"Geocode lookup failed: {e}")
+        return jsonify({"error": "Location lookup failed. Please try again later."}), 502
 
 
 @app.route("/emergency")
@@ -824,6 +1001,37 @@ TRANSLATIONS = {
         "share_mood": "Share your mood, stress, and reflections.",
         "get_support_tips": "Get support tips based on your latest score.",
         "access_support": "Access urgent Kenya-specific support contacts.",
+        "recommendations_title": "Wellness Recommendations",
+        "last_assessment_score": "Your last assessment score was",
+        "no_assessment_recorded": "No assessment recorded yet.",
+        "complete_assessment": "Complete an",
+        "assessment_link": "assessment",
+        "to_receive_tips": "to receive tailored tips.",
+        "severity_label": "Severity",
+        "urgent_recommendation": "Please seek urgent help and use the Emergency section if needed.",
+        "emergency_link_text": "View Emergency resources",
+        "hospital_recommendation_title": "Hospital Recommendation",
+        "diagnostic_disclaimer": "This is not a diagnostic tool. It provides nearby care suggestions only.",
+        "hospital_recommendation_description": "Get nearby hospitals and clinics based on your location, or enter a town if location access is denied.",
+        "use_my_location": "Use my location",
+        "enter_town_manually": "Enter town manually",
+        "manual_location_placeholder": "Town, city or neighborhood",
+        "search_location": "Search location",
+        "no_facilities_found": "No nearby facilities were found. Please check the Emergency section or call your local helpline.",
+        "helpline_label": "Helpline",
+        "directions_link_text": "Get directions",
+        "searching_nearby": "Searching for nearby facilities...",
+        "facility_query_failed": "Facility search failed. Please try again later.",
+        "recommendations_found": "Nearby facilities found:",
+        "manual_enter_prompt": "Enter your town or city to find nearby locations.",
+        "geolocation_unsupported": "Geolocation is not supported by your browser.",
+        "locating": "Locating...",
+        "location_denied": "Location access denied. You can enter your town manually below.",
+        "enter_location_query": "Please enter a location query.",
+        "geocoding": "Looking up location...",
+        "geocode_failed": "Location lookup failed. Please try a different town or city.",
+        "use_this_location": "Use this location",
+        "select_location": "Select the best match for your location.",
         "features": "Features",
         "daily_checkins_description": "Log mood, stress, and note your feelings in one place.",
         "insightful_charts_description": "See your weekly trends and understand what affects your wellbeing.",
@@ -836,6 +1044,14 @@ TRANSLATIONS = {
         "type_message": "Type a message...",
         "send": "Send",
         "ai_resting": "AngazaCare AI is resting, please try again",
+        "voice_chat_button": "Voice Chat",
+        "voice_input_start": "Start voice input",
+        "voice_input_stop": "Stop listening",
+        "voice_input_unsupported": "Voice input is not supported in this browser.",
+        "voice_input_listening": "Listening...",
+        "voice_input_unavailable": "Your browser cannot use voice input at the moment.",
+        "voice_input_error": "There was an error with voice recognition. Please try again.",
+        "type_message_empty": "Please type a message to send.",
         "footer": "AngazaCare © 2026 — Mental health support that feels personal.",
         "positive_mood": "Positive mood support",
         "mild_support": "Mild support",
@@ -885,6 +1101,14 @@ TRANSLATIONS = {
         "type_message": "Andika ujumbe...",
         "send": "Tuma",
         "ai_resting": "AI ya AngazaCare inapumzika, tafadhali jaribu tena",
+        "type_message_empty": "Tafadhali andika ujumbe kabla ya kutuma.",
+        "voice_input_start": "Anza kuzungumza kwa sauti",
+        "voice_input_stop": "Acha kusikiliza",
+        "voice_input_unsupported": "Utambuzi wa sauti hauendani na kivinjari hiki.",
+        "voice_input_listening": "Inasikiliza...",
+        "voice_input_unavailable": "Kivinjari chako hakiwezi kutumia sauti kwa sasa.",
+        "voice_input_error": "Kuna tatizo na utambuzi wa sauti. Tafadhali jaribu tena.",
+        "voice_chat_button": "Sauti Chat",
         "footer": "AngazaCare © 2026 — Msaada wa afya ya akili ambao unajisikia binafsi.",
         "welcome_title": "Karibu AngazaCare",
         "welcome_headline": "Fuata hisia zako, shinda msongo, na upate msaada wa utulivu.",
@@ -931,6 +1155,31 @@ TRANSLATIONS = {
         "complete_assessment": "Kamilisha",
         "assessment_link": "tathmini",
         "to_receive_tips": "kupata vidokezo vilivyopewa mwili.",
+        "severity_label": "Ukadiriaji",
+        "urgent_recommendation": "Tafadhali tafuta msaada wa haraka na tumia sehemu ya Dharura ikiwa unahitaji.",
+        "emergency_link_text": "Tazama rasilimali za Dharura",
+        "hospital_recommendation_title": "Mapendekezo ya Hospitali",
+        "diagnostic_disclaimer": "Hii sio chombo cha utambuzi. Inatoa mapendekezo ya huduma tu.",
+        "hospital_recommendation_description": "Pata hospitali na kliniki za karibu kulingana na eneo lako, au ingiza mji ikiwa ufikiaji wa eneo umekwisha katishwa.",
+        "use_my_location": "Tumia eneo langu",
+        "enter_town_manually": "Weka mji kwa mkono",
+        "manual_location_placeholder": "Mji, mtaa, au eneo",
+        "search_location": "Tafuta eneo",
+        "no_facilities_found": "Hakuna vituo vya karibu vilivyopatikana. Tafadhali angalia sehemu ya Dharura au piga huduma ya msaada ya eneo lako.",
+        "helpline_label": "Msaada",
+        "directions_link_text": "Pata maelekezo",
+        "searching_nearby": "Kutatua vituo vya karibu...",
+        "facility_query_failed": "Utafutaji wa vituo ulishindikana. Tafadhali jaribu tena baadaye.",
+        "recommendations_found": "Vituo vya karibu vimepatikana:",
+        "manual_enter_prompt": "Weka mji au jiji lako kupata maeneo ya karibu.",
+        "geolocation_unsupported": "Geolocation haitegemezwi na kivinjari chako.",
+        "locating": "Kutatua eneo...",
+        "location_denied": "Ufikiaji wa eneo umekatishwa. Unaweza kuingiza mji kwa mkono hapa chini.",
+        "enter_location_query": "Tafadhali ingiza swali la eneo.",
+        "geocoding": "Inatafuta eneo...",
+        "geocode_failed": "Utafutaji wa eneo ulishindikana. Tafadhali jaribu mji au jiji tofauti.",
+        "use_this_location": "Tumia eneo hili",
+        "select_location": "Chagua matokeo yanayofaa zaidi kwa eneo lako.",
         "emergency_support": "Msaada wa Dharura",
         "emergency_context": "Ikiwa unahitaji msaada wa haraka, wasiliana na mojawapo ya rasilimali hizi mara moja.",
         "phone": "Simu",
@@ -1027,7 +1276,7 @@ def api_chat():
         )
         return jsonify({"reply": crisis_msg}), 200
 
-    if not genai or not os.getenv("GEMINI_API_KEY"):
+    if not genai or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
         return jsonify({"reply": get_supportive_fallback(user_message, lang=get_language())}), 200
 
     # Get user's language preference

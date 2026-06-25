@@ -4,6 +4,13 @@
     <h2>{{ t.get('recommendations_title', 'Wellness Recommendations') }}</h2>
     {% if assessment %}
         <p>{{ t.get('last_assessment_score', 'Your last assessment score was') }} <strong>{{ assessment.score }}</strong> ({{ assessment.severity }}).</p>
+        <div class="status-card" style="border-left: 4px solid {{ severity_data.color if severity_data else '#64ffda' }}; padding: 1rem; margin-bottom: 1rem; background: rgba(255,255,255,0.04);">
+            <strong>{{ t.get('severity_label', 'Severity') }}:</strong> {{ severity_data.label if severity_data else assessment.severity }}<br />
+            {{ severity_data.message if severity_data else '' }}
+            {% if severity_data and severity_data.label == 'Severe' %}
+                <p style="margin-top:0.75rem; font-weight:700;">{{ t.get('urgent_recommendation', 'Please seek urgent help and use the Emergency section if needed.') }} <a href="/emergency">{{ t.get('emergency_link_text', 'View Emergency resources') }}</a></p>
+            {% endif %}
+        </div>
         <div class="card-list">
             {% for tip in tips %}
                 <div class="card small-card">
@@ -11,8 +18,154 @@
                 </div>
             {% endfor %}
         </div>
+
+        <div class="card" style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.05);">
+            <h3>{{ t.get('hospital_recommendation_title', 'Hospital Recommendation') }}</h3>
+            <p>{{ t.get('diagnostic_disclaimer', 'This is not a diagnostic tool. It provides nearby care suggestions only.') }}</p>
+            <div id="hospital-recommendation-widget">
+                <p>{{ t.get('hospital_recommendation_description', 'Get nearby hospitals and clinics based on your location, or enter a town if location access is denied.') }}</p>
+                <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+                    <button id="locate-button" class="button">{{ t.get('use_my_location', 'Use my location') }}</button>
+                    <button id="manual-button" class="button button-secondary">{{ t.get('enter_town_manually', 'Enter town manually') }}</button>
+                </div>
+                <div id="location-status" style="margin-bottom:1rem; color:#cbd5e1;"></div>
+                <div id="manual-location-form" style="display:none; margin-bottom:1rem;">
+                    <input id="manual-location-input" type="text" placeholder="{{ t.get('manual_location_placeholder', 'Town, city or neighborhood') }}" style="width:100%; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:#0b1120; color:#edf2fb;" />
+                    <button id="manual-location-search" class="button" style="margin-top:0.75rem;">{{ t.get('search_location', 'Search location') }}</button>
+                    <div id="geocode-results" style="margin-top:0.75rem;"></div>
+                </div>
+                <div id="facility-results"></div>
+            </div>
+        </div>
     {% else %}
         <p>{{ t.get('no_assessment_recorded', 'No assessment recorded yet.') }} {{ t.get('complete_assessment', 'Complete an') }} <a href="/assessment">{{ t.get('assessment_link', 'assessment') }}</a> {{ t.get('to_receive_tips', 'to receive tailored tips.') }}</p>
     {% endif %}
 </div>
+
+<script>
+    const score = {{ assessment.score if assessment else 'null' }};
+    const severityData = {{ severity_data | tojson if severity_data else 'null' }};
+    const locateButton = document.getElementById('locate-button');
+    const manualButton = document.getElementById('manual-button');
+    const locationStatus = document.getElementById('location-status');
+    const manualForm = document.getElementById('manual-location-form');
+    const manualInput = document.getElementById('manual-location-input');
+    const manualSearch = document.getElementById('manual-location-search');
+    const geocodeResults = document.getElementById('geocode-results');
+    const facilityResults = document.getElementById('facility-results');
+
+    const recText = {
+        noFacilitiesFound: {{ t.get('no_facilities_found', 'No nearby facilities were found. Please check the Emergency section or call your local helpline.') | tojson }},
+        directionsLink: {{ t.get('directions_link_text', 'Get directions') | tojson }},
+    };
+
+    function setStatus(message) {
+        locationStatus.textContent = message;
+    }
+
+    function clearResults() {
+        facilityResults.innerHTML = '';
+    }
+
+    function renderFacilities(data) {
+        clearResults();
+        if (!data || !data.facilities || data.facilities.length === 0) {
+            const fallbackText = data && data.fallback ? data.fallback.text : '';
+            const helplineText = data && data.fallback && data.fallback.helpline ? `<p><strong>{{ t.get('helpline_label', 'Helpline') }}:</strong> ${data.fallback.helpline}</p>` : '';
+            facilityResults.innerHTML = `<div class="card small-card" style="background:#1e293b;"><p>${recText.noFacilitiesFound}</p><p>${fallbackText}</p>${helplineText}</div>`;
+            return;
+        }
+        const list = document.createElement('div');
+        list.style.display = 'grid';
+        list.style.gap = '0.75rem';
+        data.facilities.forEach((facility) => {
+            const item = document.createElement('div');
+            item.className = 'card small-card';
+            item.innerHTML = `<h4>${facility.name}</h4><p>${facility.address}</p><p>${facility.distance} km away</p><a href="${facility.maps_url}" target="_blank" rel="noopener noreferrer">${recText.directionsLink}</a>`;
+            list.appendChild(item);
+        });
+        facilityResults.appendChild(list);
+    }
+
+    async function fetchRecommendations(lat, lng) {
+        setStatus('{{ t.get('searching_nearby', 'Searching for nearby facilities...') }}');
+        clearResults();
+        try {
+            const response = await fetch('/api/recommend', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({score: score, lat: lat, lng: lng}),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                setStatus(data.error || '{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
+                return;
+            }
+            setStatus('{{ t.get('recommendations_found', 'Nearby facilities found:') }}');
+            renderFacilities(data);
+        } catch (error) {
+            setStatus('{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
+        }
+    }
+
+    function showManualForm() {
+        manualForm.style.display = 'block';
+        setStatus('{{ t.get('manual_enter_prompt', 'Enter your town or city to find nearby locations.') }}');
+    }
+
+    locateButton?.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            setStatus('{{ t.get('geolocation_unsupported', 'Geolocation is not supported by your browser.') }}');
+            showManualForm();
+            return;
+        }
+        setStatus('{{ t.get('locating', 'Locating...') }}');
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const {latitude, longitude} = position.coords;
+            await fetchRecommendations(latitude, longitude);
+        }, (error) => {
+            setStatus('{{ t.get('location_denied', 'Location access denied. You can enter your town manually below.') }}');
+            showManualForm();
+        }, {timeout: 15000});
+    });
+
+    manualButton?.addEventListener('click', () => {
+        showManualForm();
+    });
+
+    manualSearch?.addEventListener('click', async () => {
+        const query = manualInput.value.trim();
+        if (!query) {
+            setStatus('{{ t.get('enter_location_query', 'Please enter a location query.') }}');
+            return;
+        }
+        setStatus('{{ t.get('geocoding', 'Looking up location...') }}');
+        geocodeResults.innerHTML = '';
+        try {
+            const response = await fetch('/api/geocode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query}),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.results || data.results.length === 0) {
+                setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
+                return;
+            }
+            geocodeResults.innerHTML = data.results.map((result, index) => `
+                <div class="card small-card" style="padding:0.75rem;"><p><strong>${result.display_name}</strong></p><button class="button" data-lat="${result.lat}" data-lng="${result.lon}">{{ t.get('use_this_location', 'Use this location') }}</button></div>
+            `).join('');
+            geocodeResults.querySelectorAll('button[data-lat]').forEach(button => {
+                button.addEventListener('click', async (event) => {
+                    const lat = event.target.dataset.lat;
+                    const lng = event.target.dataset.lng;
+                    await fetchRecommendations(lat, lng);
+                });
+            });
+            setStatus('{{ t.get('select_location', 'Select the best match for your location.') }}');
+        } catch (error) {
+            setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
+        }
+    });
+</script>
 {% endblock %}
