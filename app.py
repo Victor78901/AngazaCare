@@ -1443,6 +1443,9 @@ def weekly_report():
         return jsonify({"report": get_supportive_fallback()}), 200
 
 
-if __name__ == "__main__":
+# Initialize database on startup
+with app.app_context():
     init_db()
-    app.run(host="0.0.0.0", debug=True)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
