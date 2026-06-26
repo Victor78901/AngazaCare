@@ -276,14 +276,32 @@ def migrate_db():
 
 def init_db():
     with app.app_context():
-        migrate_db()
-        if not os.path.exists("angazacare.db"):
-            db.create_all()
-            seed_database()
-        else:
-            db.create_all()
-            if User.query.count() == 0:
+        try:
+            migrate_db()
+            db_path = os.path.join(os.getcwd(), "angazacare.db")
+            print(f"Database path: {db_path}")
+            print(f"Database exists: {os.path.exists(db_path)}")
+            
+            if not os.path.exists(db_path):
+                print("Creating database tables...")
+                db.create_all()
+                print("Seeding database...")
                 seed_database()
+                print("Database seeded successfully")
+            else:
+                print("Database exists, ensuring tables are created...")
+                db.create_all()
+                user_count = User.query.count()
+                print(f"Current user count: {user_count}")
+                if user_count == 0:
+                    print("Seeding database with demo data...")
+                    seed_database()
+                    print("Database seeded successfully")
+        except Exception as e:
+            print(f"Database initialization error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 def hash_password(password):
