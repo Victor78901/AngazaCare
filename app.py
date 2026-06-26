@@ -29,15 +29,26 @@ from models import (
 
 load_dotenv()
 
+print("Loading environment variables...")
+print(f"USE_FALLBACK_ONLY: {os.getenv('USE_FALLBACK_ONLY', 'not set')}")
+print(f"GEMINI_API_KEY set: {bool(os.getenv('GEMINI_API_KEY'))}")
+
 # Set to True to use fallback responses only (when API quota is exhausted)
 USE_FALLBACK_ONLY = os.getenv("USE_FALLBACK_ONLY", "false").lower() == "true"
 
+print(f"genai module loaded: {genai is not None}")
+
 if genai is not None and not USE_FALLBACK_ONLY:
     try:
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-    except Exception:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        print(f"Configuring genai with key: {'***' + api_key[-4:] if api_key else 'None'}")
+        genai.configure(api_key=api_key)
+        print("GenAI configured successfully")
+    except Exception as e:
+        print(f"GenAI configuration failed: {e}")
         genai = None
 
+print("Creating Flask app...")
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
