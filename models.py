@@ -98,3 +98,13 @@ class ClinicianViewLog(db.Model):
     patient_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     viewed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     note = db.Column(db.Text, nullable=True)
+
+
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_message = db.Column(db.Text, nullable=False)
+    ai_response = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    user = db.relationship("User", backref="chat_messages")

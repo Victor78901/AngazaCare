@@ -5,13 +5,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: angazacare-app
     ports:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
     volumes:
       - angazacare_db:/app/angazacare.db
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
 volumes:
   angazacare_db:
+    driver: local

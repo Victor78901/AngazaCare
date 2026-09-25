@@ -25,8 +25,8 @@
             <div id="hospital-recommendation-widget">
                 <p>{{ t.get('hospital_recommendation_description', 'Get nearby hospitals and clinics based on your location, or enter a town if location access is denied.') }}</p>
                 <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
-                    <button id="locate-button" class="button">{{ t.get('use_my_location', 'Use my location') }}</button>
-                    <button id="manual-button" class="button button-secondary">{{ t.get('enter_town_manually', 'Enter town manually') }}</button>
+                    <input id="location-search-input" type="text" placeholder="{{ t.get('manual_location_placeholder', 'Town, city or neighborhood') }}" style="flex:1; min-width:200px; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:#0b1120; color:#edf2fb;" />
+                    <button id="search-button" class="button">{{ t.get('search_location', 'Search') }}</button>
                 </div>
                 <div id="location-status" style="margin-bottom:1rem; color:#cbd5e1;"></div>
                 <div id="manual-location-form" style="display:none; margin-bottom:1rem;">
@@ -45,8 +45,8 @@
 <script>
     const score = {{ assessment.score if assessment else 'null' }};
     const severityData = {{ severity_data | tojson if severity_data else 'null' }};
-    const locateButton = document.getElementById('locate-button');
-    const manualButton = document.getElementById('manual-button');
+    const locationSearchInput = document.getElementById('location-search-input');
+    const searchButton = document.getElementById('search-button');
     const locationStatus = document.getElementById('location-status');
     const manualForm = document.getElementById('manual-location-form');
     const manualInput = document.getElementById('manual-location-input');
@@ -91,19 +91,27 @@
         setStatus('{{ t.get('searching_nearby', 'Searching for nearby facilities...') }}');
         clearResults();
         try {
+            console.log('Fetching recommendations for:', lat, lng);
             const response = await fetch('/api/recommend', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({score: score, lat: lat, lng: lng}),
             });
+            console.log('Response status:', response.status);
             const data = await response.json();
+            console.log('Response data:', data);
             if (!response.ok) {
                 setStatus(data.error || '{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
                 return;
             }
-            setStatus('{{ t.get('recommendations_found', 'Nearby facilities found:') }}');
+            if (data.facilities && data.facilities.length > 0) {
+                setStatus('{{ t.get('recommendations_found', 'Nearby facilities found:') }}');
+            } else if (data.fallback) {
+                setStatus(data.fallback.text);
+            }
             renderFacilities(data);
         } catch (error) {
+            console.error('Fetch recommendations error:', error);
             setStatus('{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
         }
     }
@@ -113,24 +121,49 @@
         setStatus('{{ t.get('manual_enter_prompt', 'Enter your town or city to find nearby locations.') }}');
     }
 
-    locateButton?.addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            setStatus('{{ t.get('geolocation_unsupported', 'Geolocation is not supported by your browser.') }}');
-            showManualForm();
+    searchButton?.addEventListener('click', async () => {
+        const query = locationSearchInput.value.trim();
+        if (!query) {
+            setStatus('{{ t.get('enter_location_query', 'Please enter a location query.') }}');
             return;
         }
-        setStatus('{{ t.get('locating', 'Locating...') }}');
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const {latitude, longitude} = position.coords;
-            await fetchRecommendations(latitude, longitude);
-        }, (error) => {
-            setStatus('{{ t.get('location_denied', 'Location access denied. You can enter your town manually below.') }}');
-            showManualForm();
-        }, {timeout: 15000});
+        setStatus('{{ t.get('geocoding', 'Looking up location...') }}');
+        geocodeResults.innerHTML = '';
+        try {
+            const response = await fetch('/api/geocode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query}),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.results || data.results.length === 0) {
+                setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
+                return;
+            }
+            geocodeResults.innerHTML = data.results.map((result, index) => `
+                <div class="card small-card" style="padding:0.75rem; margin-bottom:0.5rem;">
+                    <p><strong>${result.display_name}</strong></p>
+                    <button class="button" data-lat="${result.lat}" data-lng="${result.lon}">{{ t.get('use_this_location', 'Use this location') }}</button>
+                </div>
+            `).join('');
+            geocodeResults.querySelectorAll('button[data-lat]').forEach(button => {
+                button.addEventListener('click', async (event) => {
+                    const lat = event.target.dataset.lat;
+                    const lng = event.target.dataset.lng;
+                    await fetchRecommendations(lat, lng);
+                });
+            });
+            setStatus('{{ t.get('select_location', 'Select the best match for your location.') }}');
+        } catch (error) {
+            setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
+        }
     });
 
-    manualButton?.addEventListener('click', () => {
-        showManualForm();
+    // Allow Enter key to trigger search
+    locationSearchInput?.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            searchButton.click();
+        }
     });
 
     manualSearch?.addEventListener('click', async () => {
