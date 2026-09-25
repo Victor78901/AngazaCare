@@ -54,32 +54,17 @@ if genai is not None and not USE_FALLBACK_ONLY:
         genai_client = None
 
 print("Creating Flask app...")
-# Vercel's serverless filesystem is read-only except for /tmp, so Flask's default
-# "instance" folder (created next to app.py) can't be written there. When running
-# on Vercel, point Flask's instance_path at /tmp/instance (writable) and make sure
-# it exists before db.init_app runs. Locally this keeps Flask's normal behaviour.
-if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
-    instance_path = "/tmp/instance"
-    os.makedirs(instance_path, exist_ok=True)
-    app = Flask(__name__, instance_path=instance_path)
-else:
-    app = Flask(__name__)
-    os.makedirs(app.instance_path, exist_ok=True)
+app = Flask(__name__, instance_path="/tmp/instance")
+os.makedirs(app.instance_path, exist_ok=True)
 
 app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
 
-database_url = os.environ.get("DATABASE_URL")
-if not database_url:
-    # NOTE: SQLite writes to the local filesystem, which is ephemeral on Vercel
-    # (and read-only outside of /tmp). Any data written to a SQLite file here will
-    # NOT persist between deployments/invocations. Set the DATABASE_URL env var to
-    # point at a managed database (e.g. Postgres) for production/Vercel use.
-    print(
-        "WARNING: DATABASE_URL is not set. Falling back to a local SQLite file, "
-        "which will NOT persist on Vercel's read-only/ephemeral filesystem. "
-        "Set DATABASE_URL to a persistent database (e.g. Postgres) for deployment."
-    )
-    database_url = "sqlite:///angazacare.db"
+database_url = os.environ.get(
+    "DATABASE_URL",
+    "sqlite:////tmp/instance/app.db",
+)
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
