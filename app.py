@@ -7,9 +7,11 @@ import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
 except Exception:
     genai = None
+    genai_types = None
 from dotenv import load_dotenv
 
 from flask import Flask, flash, redirect, render_template, request, url_for, jsonify, session
@@ -39,20 +41,46 @@ USE_FALLBACK_ONLY = os.getenv("USE_FALLBACK_ONLY", "false").lower() == "true"
 
 print(f"genai module loaded: {genai is not None}")
 
+# google-genai client instance (replaces the deprecated genai.configure() pattern).
+genai_client = None
 if genai is not None and not USE_FALLBACK_ONLY:
     try:
         api_key = os.getenv("GEMINI_API_KEY", "")
         print(f"Configuring genai with key: {'***' + api_key[-4:] if api_key else 'None'}")
-        genai.configure(api_key=api_key)
+        genai_client = genai.Client(api_key=api_key)
         print("GenAI configured successfully")
     except Exception as e:
         print(f"GenAI configuration failed: {e}")
-        genai = None
+        genai_client = None
 
 print("Creating Flask app...")
-app = Flask(__name__)
+# Vercel's serverless filesystem is read-only except for /tmp, so Flask's default
+# "instance" folder (created next to app.py) can't be written there. When running
+# on Vercel, point Flask's instance_path at /tmp/instance (writable) and make sure
+# it exists before db.init_app runs. Locally this keeps Flask's normal behaviour.
+if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+    instance_path = "/tmp/instance"
+    os.makedirs(instance_path, exist_ok=True)
+    app = Flask(__name__, instance_path=instance_path)
+else:
+    app = Flask(__name__)
+    os.makedirs(app.instance_path, exist_ok=True)
+
 app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
+
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    # NOTE: SQLite writes to the local filesystem, which is ephemeral on Vercel
+    # (and read-only outside of /tmp). Any data written to a SQLite file here will
+    # NOT persist between deployments/invocations. Set the DATABASE_URL env var to
+    # point at a managed database (e.g. Postgres) for production/Vercel use.
+    print(
+        "WARNING: DATABASE_URL is not set. Falling back to a local SQLite file, "
+        "which will NOT persist on Vercel's read-only/ephemeral filesystem. "
+        "Set DATABASE_URL to a persistent database (e.g. Postgres) for deployment."
+    )
+    database_url = "sqlite:///angazacare.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
@@ -612,15 +640,13 @@ def get_patient_ai_summary(patient):
     )
 
     ai_text = None
-    if genai is not None:
+    if genai_client is not None:
         try:
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                system_instruction="You are a supportive clinical assistant helping a psychiatrist review anonymized patient trends.",
-            )
-            response = model.generate_content(
-                user_message,
-                generation_config=genai.types.GenerationConfig(
+            response = genai_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_message,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction="You are a supportive clinical assistant helping a psychiatrist review anonymized patient trends.",
                     temperature=0.35,
                     top_p=0.85,
                     max_output_tokens=120,
@@ -1442,7 +1468,7 @@ def api_chat():
                 app.logger.exception(f"Failed to save chat message: {e}")
         return jsonify({"reply": crisis_msg}), 200
 
-    if not genai or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
+    if not genai_client or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
         fallback_reply = get_supportive_fallback(user_message, lang=get_language())
         # Save fallback response
         if current_user.is_authenticated:
@@ -1505,13 +1531,11 @@ def api_chat():
         system_prompt = f"{system_prompt}\n\nUser Context:\n" + "\n".join(user_context)
 
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=system_prompt,
-        )
-        response = model.generate_content(
-            user_message,
-            generation_config=genai.types.GenerationConfig(
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=user_message,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
                 temperature=0.65,
                 top_p=0.95,
                 max_output_tokens=800,
@@ -1576,7 +1600,7 @@ def mood_history():
 @app.route("/api/weekly-report")
 @login_required
 def weekly_report():
-    if not genai or not os.getenv("GEMINI_API_KEY"):
+    if not genai_client or not os.getenv("GEMINI_API_KEY"):
         return jsonify({"error": "AI is resting, try again"}), 500
     
     today = date.today()
@@ -1619,10 +1643,10 @@ def weekly_report():
 
     try:
         full_message = f"{prompt}\n\nPlease summarize the above user data with supportive recommendations."
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-        response = model.generate_content(
-            full_message,
-            generation_config=genai.types.GenerationConfig(
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=full_message,
+            config=genai_types.GenerateContentConfig(
                 temperature=0.65,
                 top_p=0.95,
                 max_output_tokens=500,

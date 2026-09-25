@@ -1,8 +1,9 @@
 flask
 gunicorn
-google-generativeai
+google-genai
 python-dotenv
 werkzeug
 flask-login
 bcrypt
 flask-sqlalchemy
+psycopg2-binary
