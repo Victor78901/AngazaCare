@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+    <h1 style="margin-top: 0;">Anonymous User Responses</h1>
+    <p style="color: #cbd5e1; margin: 0.5rem 0 0;">
+        View aggregated user responses without identifying individual users. All data is anonymized to protect patient privacy.
+    </p>
+</div>
+
+<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <div class="card" style="padding: 1.25rem; text-align: center;">
+        <p style="margin: 0; color: #94a3b8; font-size: 0.9rem;">Total Patients</p>
+        <p style="margin: 0.5rem 0 0; font-size: 2rem; font-weight: 700; color: #64ffda;">{{ total_patients }}</p>
+    </div>
+    <div class="card" style="padding: 1.25rem; text-align: center;">
+        <p style="margin: 0; color: #94a3b8; font-size: 0.9rem;">Total Assessments</p>
+        <p style="margin: 0.5rem 0 0; font-size: 2rem; font-weight: 700; color: #ffc864;">{{ assessments|length }}</p>
+    </div>
+    <div class="card" style="padding: 1.25rem; text-align: center;">
+        <p style="margin: 0; color: #94a3b8; font-size: 0.9rem;">Avg. Score</p>
+        {% set avg_score = (assessments | sum(attribute='score') / assessments | length) if assessments | length > 0 else 0 %}
+        <p style="margin: 0.5rem 0 0; font-size: 2rem; font-weight: 700; color: #ff8a64;">{{ "%.1f" | format(avg_score) }}</p>
+    </div>
+</div>
+
+{% if severity_stats %}
+<div class="card" style="margin-bottom: 2rem; padding: 1.5rem;">
+    <h2 style="margin-top: 0;">Severity Distribution</h2>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
+        {% for severity, count in severity_stats %}
+        <div style="flex: 1; min-width: 150px; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px; text-align: center;">
+            <p style="margin: 0; font-size: 1.5rem; font-weight: 700;">{{ count }}</p>
+            <p style="margin: 0.5rem 0 0; color: #cbd5e1; font-size: 0.9rem;">{{ severity }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if mood_stats %}
+<div class="card" style="margin-bottom: 2rem; padding: 1.5rem;">
+    <h2 style="margin-top: 0;">Mood Score Distribution</h2>
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; align-items: flex-end;">
+        {% for mood_score, count in mood_stats %}
+        <div style="flex: 1; min-width: 60px; text-align: center;">
+            <div style="background: linear-gradient(135deg, #3fa8a3, #83f0d6); height: {{ count * 50 }}px; border-radius: 6px; margin-bottom: 0.5rem; min-height: 20px;"></div>
+            <p style="margin: 0; font-weight: 600;">{{ mood_score }}/5</p>
+            <p style="margin: 0.25rem 0 0; color: #94a3b8; font-size: 0.85rem;">{{ count }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card" style="padding: 1.5rem;">
+    <h2 style="margin-top: 0;">Recent Assessment Responses</h2>
+    {% if assessments %}
+    <div style="overflow-x: auto;">
+        <table class="table" style="margin-top: 1rem;">
+            <thead>
+                <tr>
+                    <th>User ID</th>
+                    <th>Date</th>
+                    <th>Score</th>
+                    <th>Severity</th>
+                    <th>Latest Mood</th>
+                    <th>Latest Stress</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for assessment in assessments %}
+                {% if assessment.score <= 4 %}
+                {% set score_style = 'background:#64ffda20;color:#64ffda;' %}
+                {% elif assessment.score <= 9 %}
+                {% set score_style = 'background:#ffc86420;color:#ffc864;' %}
+                {% elif assessment.score <= 14 %}
+                {% set score_style = 'background:#ff8a6420;color:#ff8a64;' %}
+                {% else %}
+                {% set score_style = 'background:#ff646420;color:#ff6464;' %}
+                {% endif %}
+                <tr>
+                    <td>#{{ assessment.user_id }}</td>
+                    <td>{{ assessment.date.strftime('%Y-%m-%d %H:%M') if assessment.date else 'N/A' }}</td>
+                    <td>
+                        <span style="display:inline-block;padding:0.25rem 0.75rem;border-radius:12px;font-weight:600;{{ score_style }}">
+                            {{ assessment.score }}/30
+                        </span>
+                    </td>
+                    <td>{{ assessment.severity }}</td>
+                    <td>
+                        {% if assessment.latest_mood %}
+                        {{ assessment.latest_mood.mood_score }}/5
+                        {% else %}
+                        <span style="color: #64748b;">No data</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if assessment.latest_mood %}
+                        {{ assessment.latest_mood.stress_level }}/10
+                        {% else %}
+                        <span style="color: #64748b;">No data</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: #94a3b8; text-align: center; padding: 2rem 0;">No assessment responses yet.</p>
+    {% endif %}
+</div>
+
+{% if assessments and assessments[0].answers %}
+<div class="card" style="margin-top: 2rem; padding: 1.5rem;">
+    <h2 style="margin-top: 0;">Answer Patterns (Most Recent)</h2>
+    <p style="color: #cbd5e1; margin: 0.5rem 0 1.5rem;">
+        Overview of how users responded to assessment questions (0 = Not at all, 1 = Several days, 2 = More than half, 3 = Nearly every day)
+    </p>
+    <div style="overflow-x: auto;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Response Distribution</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set answers = assessments[0].answers %}
+                {% for i in range(answers|length) %}
+                {% set answer_values = [] %}
+                {% for assessment in assessments %}
+                    {% if assessment.answers and i < assessment.answers|length %}
+                        {% if answer_values.append(assessment.answers[i]) %}{% endif %}
+                    {% endif %}
+                {% endfor %}
+                {% set counts = {} %}
+                {% for ans in answer_values %}
+                    {% if counts.update({ans: counts.get(ans, 0) + 1}) %}{% endif %}
+                {% endfor %}
+                {% set total = answer_values | length %}
+                <tr>
+                    <td style="min-width: 200px;">Q{{ i + 1 }}</td>
+                    <td>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            {% for val in [0, 1, 2, 3] %}
+                                {% set count = counts.get(val, 0) %}
+                                {% set pct = (count / total * 100) if total > 0 else 0 %}
+                                <div style="flex: 1; text-align: center;">
+                                    <div style="
+                                        background: linear-gradient(135deg, #3fa8a3, #83f0d6);
+                                        height: {{ pct }}px;
+                                        min-height: 4px;
+                                        border-radius: 4px;
+                                        margin-bottom: 0.25rem;
+                                    "></div>
+                                    <span style="font-size: 0.85rem; color: #94a3b8;">{{ count }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

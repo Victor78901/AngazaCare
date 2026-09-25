@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Voice Chat</h1>
+<p>Speak to the AI and receive a spoken response.</p>
+<button id="startBtn">Start Recording</button>
+<button id="stopBtn" disabled>Stop</button>
+<div id="status"></div>
+<div id="transcript"></div>
+<div id="aiResponse"></div>
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let recognition;
+let autoListening = false;
+
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+const transcriptEl = document.getElementById('transcript');
+const responseEl = document.getElementById('aiResponse');
+
+function supportsSpeechRecognition() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function getSupportedMicMimeType() {
+    if (!window.MediaRecorder) return '';
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
+    if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
+    if (MediaRecorder.isTypeSupported('audio/wav')) return 'audio/wav';
+    return '';
+}
+
+function updateControls(recording) {
+    startBtn.disabled = recording;
+    stopBtn.disabled = !recording;
+}
+
+async function sendTranscript(text) {
+    if (!text) {
+        statusEl.innerText = 'No audio captured. Please try again.';
+        return;
+    }
+
+    transcriptEl.innerText = 'Transcript: ' + text;
+    responseEl.innerText = '';
+    statusEl.innerText = 'Sending to AI...';
+
+    const resp = await fetch('/api/process_voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+    });
+
+    const data = await resp.json();
+    statusEl.innerText = '';
+
+    if (!resp.ok) {
+        responseEl.innerText = data.error || 'AI processing failed.';
+        return;
+    }
+
+    if (data.transcript) transcriptEl.innerText = 'Transcript: ' + data.transcript;
+    if (data.response) responseEl.innerText = 'AI: ' + data.response;
+
+    // Play audio response if available
+    if (data.audio) {
+        const audio = new Audio('data:audio/mp3;base64,' + data.audio);
+        audio.play();
+    } else if ('speechSynthesis' in window && data.response) {
+        // Fallback to browser TTS if server TTS failed
+        const utter = new SpeechSynthesisUtterance(data.response);
+        speechSynthesis.speak(utter);
+    }
+}
+
+async function startSpeechRecognition(restart = false) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        return startMediaRecording();
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+        statusEl.innerText = 'Listening...';
+        updateControls(true);
+    };
+
+    recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        await sendTranscript(transcript);
+    };
+
+    recognition.onerror = (event) => {
+        statusEl.innerText = 'Speech recognition error: ' + event.error;
+        updateControls(false);
+        recognition = null;
+    };
+
+    recognition.onend = () => {
+        if (autoListening) {
+            setTimeout(() => {
+                if (!recognition && autoListening) {
+                    startSpeechRecognition(true);
+                }
+            }, 500);
+        } else {
+            if (statusEl.innerText === 'Listening...') {
+                statusEl.innerText = 'Stopped listening.';
+            }
+            updateControls(false);
+            recognition = null;
+        }
+    };
+
+    recognition.start();
+}
+
+function startMediaRecording() {
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        const mimeType = getSupportedMicMimeType() || 'audio/webm';
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+                audioChunks.push(e.data);
+            }
+        };
+        mediaRecorder.onstop = handleMediaStop;
+        mediaRecorder.start();
+        statusEl.innerText = 'Recording...';
+        updateControls(true);
+
+        if (autoListening) {
+            setTimeout(() => {
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                }
+            }, 5000);
+        }
+    }).catch(() => {
+        alert('Microphone access denied or not available.');
+    });
+}
+
+async function handleMediaStop() {
+    if (!audioChunks.length) {
+        statusEl.innerText = 'No audio captured. Please try again.';
+        updateControls(false);
+        return;
+    }
+
+    const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+    const form = new FormData();
+    form.append('audio', blob, 'recording.webm');
+
+    statusEl.innerText = 'Uploading...';
+    updateControls(false);
+
+    const resp = await fetch('/api/process_voice', { method: 'POST', body: form });
+    const data = await resp.json();
+    statusEl.innerText = '';
+
+    if (!resp.ok) {
+        responseEl.innerText = data.error || 'AI processing failed.';
+        return;
+    }
+
+    if (data.transcript) transcriptEl.innerText = 'Transcript: ' + data.transcript;
+    if (data.response) responseEl.innerText = 'AI: ' + data.response;
+
+    // Play audio response if available
+    if (data.audio) {
+        const audio = new Audio('data:audio/mp3;base64,' + data.audio);
+        audio.play();
+    } else if ('speechSynthesis' in window && data.response) {
+        // Fallback to browser TTS if server TTS failed
+        const utter = new SpeechSynthesisUtterance(data.response);
+        speechSynthesis.speak(utter);
+    }
+
+    if (autoListening) {
+        setTimeout(() => {
+            if (!recognition && autoListening) {
+                startSpeechRecognition(true);
+            }
+        }, 500);
+    }
+}
+
+async function startRecording(auto = false) {
+    autoListening = auto;
+
+    if (supportsSpeechRecognition()) {
+        await startSpeechRecognition();
+    } else {
+        await startMediaRecording();
+    }
+}
+
+startBtn.addEventListener('click', () => startRecording(false));
+stopBtn.addEventListener('click', () => {
+    autoListening = false;
+    if (recognition) {
+        recognition.stop();
+        return;
+    }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        statusEl.innerText = 'Processing...';
+    }
+});
+
+window.addEventListener('load', () => startRecording(true));
+</script>
+{% endblock %}

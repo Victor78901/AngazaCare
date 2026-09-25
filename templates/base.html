@@ -181,12 +181,13 @@
                 <div class="nav-links">
                     {% if current_user.is_authenticated %}
                         <a href="/dashboard">{{ t.get('dashboard', 'Dashboard') if t else 'Dashboard' }}</a>
-                        <a href="/assessment">{{ t.get('assessment', 'Assessment') if t else 'Assessment' }}</a>
-                        <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') if t else 'Mood Tracker' }}</a>
+                        <a href="/assessment">{           <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') if t else 'Mood Tracker' }}</a>
                         <a href="/recommendations">{{ t.get('recommendations', 'Recommendations') if t else 'Recommendations' }}</a>
                         <a href="/emergency">{{ t.get('emergency', 'Emergency') if t else 'Emergency' }}</a>
+                        <a href="/help_finder">{{ t.get('nearby_facilities', 'Find Nearby Facilities') if t else 'Find Nearby Facilities' }}</a>
                         {% if current_user.role == 'psychiatrist' %}
                             <a href="/admin">Admin</a>
+                            <a href="/admin/responses">Anonymous Responses</a>
                         {% endif %}
                         <a href="/logout">{{ t.get('logout', 'Logout') if t else 'Logout' }}</a>
                     {% else %}
@@ -227,8 +228,10 @@
         <form id="mw-ai-form" class="mw-ai-form">
             <button type="button" id="mw-ai-mic" class="mw-ai-mic" aria-label="{{ t.get('voice_input_start', 'Start voice input') if t else 'Start voice input' }}">🎤</button>
             <input id="mw-ai-input" type="text" placeholder="{{ t.get('type_message', 'Type a message...') if t else 'Type a message...' }}" autocomplete="off" />
+            <button type="button" id="mw-ai-mic" title="Record voice">🎤</button>
             <button type="submit">{{ t.get('send', 'Send') if t else 'Send' }}</button>
         </form>
+        <div id="mw-ai-mic-hint" class="mw-ai-error" hidden></div>
     </div>
     <button id="mw-ai-bubble" aria-label="Open AngazaCare AI chat">AI</button>
     <button id="mw-ai-voice-btn" aria-label="{{ t.get('voice_chat_button', 'Voice Chat') if t else 'Voice Chat' }}">🎧</button>
@@ -258,12 +261,15 @@
         const chatHistory = [];
         let recognition = null;
         let isListening = false;
+        let mwMediaRecorder = null;
+        let mwAudioChunks = [];
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const speechSupported = !!SpeechRecognition;
 
         function updateMicState() {
-            if (!speechSupported) {
+            const audioSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            if (!speechSupported && !audioSupported) {
                 mwMicButton.disabled = true;
                 mwMicButton.title = mwTranslations.voiceUnsupported;
                 mwMicButton.textContent = '🎤';
@@ -296,17 +302,13 @@
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 transcript += event.results[i][0].transcript;
             }
-            
+
             if (transcript) {
-                // Only submit on final results, not interim
                 if (event.results[event.results.length - 1].isFinal) {
-                    console.log('Final transcript:', transcript);
                     mwInput.value = transcript;
                     mwForm.dispatchEvent(new Event('submit', { cancelable: true }));
                 } else {
-                    // Show interim results in the input field
                     mwInput.value = transcript;
-                    console.log('Interim transcript:', transcript);
                 }
             }
         }
@@ -316,8 +318,7 @@
                 showError(mwTranslations.voiceUnsupported);
                 return;
             }
-            
-            // Request microphone permission (important for mobile)
+
             try {
                 await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch (permError) {
@@ -325,7 +326,7 @@
                 showError('Microphone permission denied. Please enable it in your browser settings.');
                 return;
             }
-            
+
             if (!recognition) {
                 recognition = new SpeechRecognition();
                 recognition.lang = document.documentElement.lang === 'sw' ? 'sw-KE' : 'en-US';
@@ -344,9 +345,6 @@
                     const errorMsg = getErrorMessage(event.error);
                     showError(errorMsg);
                 });
-                recognition.addEventListener('start', () => {
-                    console.log('Speech recognition started');
-                });
             }
             try {
                 recognition.start();
@@ -358,7 +356,7 @@
                 showError(mwTranslations.voiceUnavailable);
             }
         }
-        
+
         function getErrorMessage(errorCode) {
             const errors = {
                 'no-speech': 'No speech detected. Please try again.',
@@ -377,22 +375,6 @@
                 recognition.stop();
             }
         }
-
-        mwMicButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            if (!speechSupported) {
-                showError(mwTranslations.voiceUnsupported);
-                return;
-            }
-            if (isListening) {
-                stopRecognition();
-            } else {
-                hideError();
-                startRecognition();
-            }
-        });
-
-        updateMicState();
 
         function renderMessage(text, sender, isLoading = false) {
             const messageEl = document.createElement('div');
@@ -418,7 +400,6 @@
         function showError(message) {
             mwError.textContent = message;
             mwError.hidden = false;
-            // Auto-hide non-error messages after 3 seconds
             if (message === mwTranslations.voiceListening) {
                 setTimeout(() => {
                     if (mwError.textContent === message) {
@@ -427,13 +408,91 @@
                 }, 3000);
             }
         }
-        
+
         function hideError() {
             mwError.hidden = true;
         }
 
-        function hideError() {
-            mwError.hidden = true;
+        function isSecureMicrophoneOrigin() {
+            return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        }
+
+        function getLocalhostHint() {
+            if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                return `Please open the app at http://127.0.0.1:${window.location.port}/ or https://localhost:${window.location.port}/ to enable microphone access.`;
+            }
+            return '';
+        }
+
+        function showMicHint() {
+            const hint = getLocalhostHint();
+            const hintEl = document.getElementById('mw-ai-mic-hint');
+            if (!hint) {
+                hintEl.hidden = true;
+                return;
+            }
+            hintEl.textContent = hint;
+            hintEl.hidden = false;
+        }
+
+        function getSupportedMicMimeType() {
+            if (!window.MediaRecorder) {
+                return '';
+            }
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                return 'audio/webm;codecs=opus';
+            }
+            if (MediaRecorder.isTypeSupported('audio/webm')) {
+                return 'audio/webm';
+            }
+            if (MediaRecorder.isTypeSupported('audio/wav')) {
+                return 'audio/wav';
+            }
+            return '';
+        }
+
+        async function stopAudioRecording() {
+            if (!mwMediaRecorder) return;
+            return new Promise((resolve) => {
+                mwMediaRecorder.onstop = async () => {
+                    const blob = new Blob(mwAudioChunks, { type: mwMediaRecorder.mimeType });
+                    mwAudioChunks = [];
+                    const uploading = renderMessage('Uploading audio...', 'user', true);
+                    const form = new FormData();
+                    form.append('audio', blob, 'recording.wav');
+                    try {
+                        const resp = await fetch('/api/process_voice', { method: 'POST', body: form });
+                        const data = await resp.json();
+                        uploading.remove();
+                        if (data.transcript) renderMessage(data.transcript, 'user');
+                        if (data.response) renderMessage(data.response, 'ai');
+                    } catch (err) {
+                        uploading.textContent = 'Failed to process audio.';
+                        showError('Audio processing failed.');
+                    }
+                    resolve();
+                };
+                mwMediaRecorder.stop();
+            });
+        }
+
+        async function startAudioRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mimeType = getSupportedMicMimeType() || 'audio/webm';
+                mwAudioChunks = [];
+                mwMediaRecorder = new MediaRecorder(stream, { mimeType });
+                mwMediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) {
+                        mwAudioChunks.push(e.data);
+                    }
+                };
+                mwMediaRecorder.start();
+                mwMicButton.textContent = '⏹';
+                mwMicButton.classList.add('recording');
+            } catch (err) {
+                showError('Microphone permission denied or not available. Please allow access in your browser or use text input.');
+            }
         }
 
         function toggleChat() {
@@ -472,6 +531,120 @@
                 startRecognition();
             }
         });
+
+        mwMicButton.addEventListener('click', async (event) => {
+            event.preventDefault();
+            if (!isSecureMicrophoneOrigin()) {
+                const hint = getLocalhostHint() || 'Microphone capture is blocked on insecure IP addresses. Please use 127.0.0.1 or HTTPS to enable the microphone.';
+                showError(hint);
+                showMicHint();
+                return;
+            }
+            if (speechSupported && !isListening) {
+                hideError();
+                startRecognition();
+                return;
+            }
+            if (mwMediaRecorder && mwMediaRecorder.state === 'recording') {
+                mwMicButton.textContent = '🎤';
+                mwMicButton.classList.remove('recording');
+                await stopAudioRecording();
+                return;
+            }
+            if (!speechSupported && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                await startAudioRecording();
+                return;
+            }
+            showError(mwTranslations.voiceUnsupported);
+        });
+
+        updateMicState();
+
+        mwForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            hideError();
+            const message = mwInput.value.trim();
+            if (!message) {
+                showError(mwTranslations.typeMessageEmpty || 'Please type a message to send.');
+                return;
+            }
+
+            addHistoryEntry(message, 'user');
+            renderMessage(message, 'user');
+            mwInput.value = '';
+            mwInput.focus();
+
+            const loadingMessage = renderMessage('', 'ai', true);
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message }),
+                });
+
+                const data = await response.json();
+                const reply = data.reply || mwTranslations.aiResting;
+                loadingMessage.textContent = reply;
+                loadingMessage.className = 'mw-ai-message ai';
+                addHistoryEntry(reply, 'ai');
+                speakText(reply);
+                if (!response.ok) {
+                    showError(mwTranslations.aiResting);
+                }
+            } catch (error) {
+                loadingMessage.textContent = mwTranslations.aiResting;
+                loadingMessage.className = 'mw-ai-message ai';
+                addHistoryEntry(mwTranslations.aiResting, 'ai');
+                showError(mwTranslations.aiResting);
+            }
+        });
+
+        mwVoiceButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (!mwChatContainer.classList.contains('open')) {
+                mwChatContainer.classList.add('open');
+                mwInput.focus();
+            }
+            if (!speechSupported) {
+                showError(mwTranslations.voiceUnsupported);
+                return;
+            }
+            if (isListening) {
+                stopRecognition();
+            } else {
+                hideError();
+                startRecognition();
+            }
+        });
+
+        mwMicButton.addEventListener('click', async (event) => {
+            event.preventDefault();
+            if (!isSecureMicrophoneOrigin()) {
+                const hint = getLocalhostHint() || 'Microphone capture is blocked on insecure IP addresses. Please use 127.0.0.1 or HTTPS to enable the microphone.';
+                showError(hint);
+                showMicHint();
+                return;
+            }
+            if (speechSupported && !isListening) {
+                hideError();
+                startRecognition();
+                return;
+            }
+            if (mwMediaRecorder && mwMediaRecorder.state === 'recording') {
+                mwMicButton.textContent = '🎤';
+                mwMicButton.classList.remove('recording');
+                await stopAudioRecording();
+                return;
+            }
+            if (!speechSupported && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                await startAudioRecording();
+                return;
+            }
+            showError(mwTranslations.voiceUnsupported);
+        });
+
+        updateMicState();
 
         mwForm.addEventListener('submit', async (event) => {
             event.preventDefault();

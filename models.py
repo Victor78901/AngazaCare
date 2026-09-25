@@ -106,5 +106,44 @@ class ChatMessage(db.Model):
     user_message = db.Column(db.Text, nullable=False)
     ai_response = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    
+
     user = db.relationship("User", backref="chat_messages")
+
+
+class HelpUnit(db.Model):
+    """Mental health facilities and help centers with location data."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    category = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), nullable=True)
+    email = db.Column(db.String(120), nullable=True)
+    address = db.Column(db.String(255), nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    hours = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "phone": self.phone,
+            "email": self.email,
+            "address": self.address,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "description": self.description,
+            "hours": self.hours,
+        }
+
+
+class VoiceChat(db.Model):
+    """Log of voice chat interactions for continuity of care."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    audio_transcript = db.Column(db.Text, nullable=True)
+    ai_response = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    mood_note = db.Column(db.String(255), nullable=True)

@@ -1,0 +1,222 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 1.2fr 0.8fr; gap: 1.5rem; align-items: start; margin-bottom: 1.5rem;">
+    <div class="card" style="padding: 1.75rem 1.5rem;">
+        <p class="eyebrow">Nearby health support</p>
+        <h1 style="margin-top:0;">Find medical care close to you</h1>
+        <p style="margin: 1rem 0 0; color: #cbd5e1; font-size: 1rem; line-height: 1.7;">
+            Allow location access once and AngazaCare will show nearby hospitals, clinics, and health centres within 5 km.
+        </p>
+    </div>
+    <div class="card finder-panel" style="padding: 1.5rem;">
+        <div id="finderStatus" class="status-chip">Detecting location...</div>
+        <p style="margin: 1rem 0 0; color: #dbeafe; font-size: 0.98rem; line-height: 1.7;">
+            This page uses your current location to display nearby facilities directly on the map. If you deny permission, you can refresh and try again.
+        </p>
+    </div>
+</div>
+{% if not google_maps_key %}
+<div class="card" style="margin-bottom: 1.5rem; padding: 1.25rem; border-left: 4px solid #f87171; background: rgba(248, 113, 113, 0.1); color: #ffe4e6;">
+    <strong>Google Maps API key is not configured.</strong> Please set <code>GOOGLE_MAPS_API_KEY</code> in your <code>.env</code> file to enable the map and facility lookup.
+</div>
+{% endif %}
+<div class="card map-card" style="padding: 0; overflow: hidden; margin-bottom: 1.5rem;">
+    <div id="map" style="height: 520px; width: 100%;"></div>
+</div>
+<div id="facilityList" class="facility-grid"></div>
+{% if google_maps_key %}
+<script>
+// Dynamically load Google Maps and gracefully handle failures (invalid key, billing, or auth issues).
+const statusEl = document.getElementById('finderStatus');
+const facilityListEl = document.getElementById('facilityList');
+let map, infoWindow, userMarker, facilityMarkers = [];
+
+function setStatus(message, isError = false) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle('status-error', isError);
+}
+
+function fallbackToList(latitude, longitude) {
+    // Hide the map visually and show fallback list results from the server
+    const mapEl = document.getElementById('map');
+    if (mapEl) mapEl.style.display = 'none';
+    fetch('/api/nearest_help_units', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude, longitude })
+    }).then(r => r.json()).then(data => {
+        facilityListEl.innerHTML = '';
+        if (!data.success || !data.units || data.units.length === 0) {
+            setStatus('No nearby facilities found in the database.', true);
+            return;
+        }
+        setStatus(`Found ${data.units.length} nearby facilities (list view).`);
+        data.units.forEach(unit => {
+            const item = document.createElement('div');
+            item.className = 'facility-card';
+            const title = document.createElement('h3'); title.textContent = unit.name; item.appendChild(title);
+            const addr = document.createElement('p'); addr.textContent = unit.address || ''; item.appendChild(addr);
+            const distance = document.createElement('p'); distance.className = 'facility-distance'; distance.textContent = `Distance: ${unit.distance_km} km`; item.appendChild(distance);
+            const actions = document.createElement('div'); actions.className = 'facility-actions';
+            const dir = document.createElement('button'); dir.className = 'btn btn-primary'; dir.textContent = 'Get Directions';
+            dir.addEventListener('click', () => {
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${unit.latitude},${unit.longitude}`, '_blank');
+            });
+            actions.appendChild(dir);
+            item.appendChild(actions);
+            facilityListEl.appendChild(item);
+        });
+    }).catch(err => {
+        console.error('Fallback list failed', err);
+        setStatus('Failed to load nearby facilities.', true);
+    });
+}
+
+function handleGeolocationFailure(message) {
+    setStatus(message, true);
+}
+
+function onMapsLoaded() {
+    try {
+        map = new google.maps.Map(document.getElementById('map'), {
+            center: { lat: -1.286389, lng: 36.817223 },
+            zoom: 12,
+            disableDefaultUI: false,
+        });
+        infoWindow = new google.maps.InfoWindow();
+        locateAndSearchWithMaps();
+    } catch (e) {
+        console.error('Maps init failed', e);
+        setStatus('Google Maps failed to initialize. Falling back to list view.', true);
+        // attempt fallback using geolocation
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((pos) => {
+                fallbackToList(pos.coords.latitude, pos.coords.longitude);
+            }, () => {
+                handleGeolocationFailure('Unable to get your location for fallback.');
+            });
+        } else {
+            handleGeolocationFailure('Geolocation is not supported by your browser.');
+        }
+    }
+}
+
+// If auth failure occurs, Google will call this global function
+window.gm_authFailure = function() {
+    console.error('Google Maps authentication failed.');
+    setStatus('Google Maps authentication failed (invalid API key or billing). Showing list fallback.', true);
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+            fallbackToList(pos.coords.latitude, pos.coords.longitude);
+        }, () => handleGeolocationFailure('Unable to get your location for fallback.'));
+    }
+};
+
+function loadGoogleMapsScript(key) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,geometry&callback=onMapsLoaded`;
+        script.async = true;
+        script.onerror = function(e) {
+            console.error('Google Maps script failed to load', e);
+            reject(new Error('Google Maps script load error'));
+        };
+        window.onMapsLoaded = function() { resolve(); };
+        // The API expects the callback named onMapsLoaded -> map init
+        window.onMapsLoaded = onMapsLoaded;
+        document.head.appendChild(script);
+    });
+}
+
+function locateAndSearchWithMaps() {
+    if (!navigator.geolocation) return handleGeolocationFailure('Geolocation is not supported by your browser.');
+    setStatus('Requesting location permission...');
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (userMarker) userMarker.setMap(null);
+        userMarker = new google.maps.Marker({
+            position: { lat: latitude, lng: longitude },
+            map,
+            title: 'Your location',
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#2563eb', fillOpacity: 0.9, strokeWeight: 2, strokeColor: '#ffffff' }
+        });
+        const userLatLng = new google.maps.LatLng(latitude, longitude);
+        map.setCenter(userLatLng); map.setZoom(13);
+
+        // Let server confirm receipt (keeps previous behaviour)
+        const locationResponse = await fetch('/api/nearby-facilities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ latitude, longitude }) });
+        const locationResponseJson = await locationResponse.json();
+        if (!locationResponseJson.success) {
+            setStatus(locationResponseJson.error || 'Unable to process location.', true);
+            return;
+        }
+
+        setStatus('Searching for facilities within 5 km...');
+        try {
+            const placesService = new google.maps.places.PlacesService(map);
+            const request = { location: userLatLng, radius: 5000, keyword: 'hospital clinic health center health centre' };
+            placesService.nearbySearch(request, (results, status) => {
+                if (status !== google.maps.places.PlacesServiceStatus.OK) {
+                    console.error('Places search failed', status);
+                    setStatus('Failed to find nearby facilities with Google Places. Showing list fallback.', true);
+                    fallbackToList(latitude, longitude);
+                    return;
+                }
+                if (!results || results.length === 0) {
+                    setStatus('No nearby facilities found within 5 km.', true);
+                    return;
+                }
+
+                clearMarkers(); facilityListEl.innerHTML = '';
+                const facilities = results.map(place => ({ place, distanceMeters: google.maps.geometry.spherical.computeDistanceBetween(userLatLng, place.geometry.location) })).sort((a,b)=>a.distanceMeters-b.distanceMeters).slice(0,10);
+                const bounds = new google.maps.LatLngBounds(); bounds.extend(userLatLng);
+                facilities.forEach((entry, index) => {
+                    const marker = new google.maps.Marker({ map, position: entry.place.geometry.location, title: entry.place.name });
+                    marker.addListener('click', () => {
+                        const content = `<div style="max-width:260px; color:#0f172a;"><h3 style="margin:0 0 0.5rem 0;">${entry.place.name}</h3><p style="margin:0 0 0.5rem 0; font-size:0.94rem;">${entry.place.vicinity || entry.place.formatted_address || 'Address unavailable'}</p><p style="margin:0 0 0.75rem 0; font-weight:600;">Distance: ${(entry.distanceMeters/1000).toFixed(2)} km</p><button style="padding:0.5rem 0.8rem;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${entry.place.geometry.location.lat()},${entry.place.geometry.location.lng()}', '_blank')">Get Directions</button></div>`;
+                        infoWindow.setContent(content); infoWindow.open(map, marker);
+                    });
+                    facilityMarkers.push(marker);
+                    const item = document.createElement('div'); item.className='facility-card'; item.appendChild(Object.assign(document.createElement('h3'),{textContent:entry.place.name}));
+                    const addr = document.createElement('p'); addr.textContent = entry.place.vicinity || entry.place.formatted_address || ''; item.appendChild(addr);
+                    const dist = document.createElement('p'); dist.className='facility-distance'; dist.textContent = `Distance: ${(entry.distanceMeters/1000).toFixed(2)} km`; item.appendChild(dist);
+                    const actions = document.createElement('div'); actions.className='facility-actions'; const view = document.createElement('button'); view.className='btn btn-secondary'; view.textContent='View on Map'; view.addEventListener('click', ()=>{ map.panTo(entry.place.geometry.location); map.setZoom(15); google.maps.event.trigger(facilityMarkers[facilityMarkers.length-1],'click'); }); actions.appendChild(view);
+                    const dir = document.createElement('button'); dir.className='btn btn-primary'; dir.textContent='Get Directions'; dir.addEventListener('click', ()=> window.open(`https://www.google.com/maps/dir/?api=1&destination=${entry.place.geometry.location.lat()},${entry.place.geometry.location.lng()}`,'_blank')); actions.appendChild(dir);
+                    item.appendChild(actions); facilityListEl.appendChild(item);
+                    bounds.extend(entry.place.geometry.location);
+                });
+                map.fitBounds(bounds);
+                setStatus(`Found ${facilities.length} nearby facilities within 5 km.`);
+            });
+        } catch (err) {
+            console.error(err);
+            setStatus('Failed to find nearby facilities with Google Places.', true);
+            fallbackToList(latitude, longitude);
+        }
+    }, (error) => {
+        if (error.code === error.PERMISSION_DENIED) handleGeolocationFailure('Location permission denied. Please allow location access to use this feature.');
+        else handleGeolocationFailure('Unable to get your location. Please try again.');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+}
+
+function clearMarkers(){ facilityMarkers.forEach(m=>m.setMap(null)); facilityMarkers=[]; }
+
+// Start: attempt to load Google Maps; on failure use the list fallback
+if ("{{ google_maps_key }}") {
+    loadGoogleMapsScript("{{ google_maps_key }}").catch(err => {
+        console.error('Google Maps load error', err);
+        setStatus('Google Maps failed to load (check API key/billing). Showing list fallback.', true);
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((pos) => fallbackToList(pos.coords.latitude, pos.coords.longitude), () => handleGeolocationFailure('Unable to get your location for fallback.'));
+        }
+    });
+} else {
+    setStatus('Google Maps API key not configured. Showing list of help units.', true);
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => fallbackToList(pos.coords.latitude, pos.coords.longitude), () => handleGeolocationFailure('Unable to get your location for fallback.'));
+    }
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -26,9 +26,16 @@ from models import (
     Assignment,
     ClinicianViewLog,
     ChatMessage,
+    HelpUnit,
+    VoiceChat,
 )
 
 load_dotenv()
+
+# Also try loading a project-level .env if present (some setups keep it under AngazaCare/)
+project_env = os.path.join(os.path.dirname(__file__), "AngazaCare", ".env")
+if os.path.exists(project_env):
+    load_dotenv(project_env)
 
 print("Loading environment variables...")
 print(f"USE_FALLBACK_ONLY: {os.getenv('USE_FALLBACK_ONLY', 'not set')}")
@@ -36,18 +43,20 @@ print(f"GEMINI_API_KEY set: {bool(os.getenv('GEMINI_API_KEY'))}")
 
 # Set to True to use fallback responses only (when API quota is exhausted)
 USE_FALLBACK_ONLY = os.getenv("USE_FALLBACK_ONLY", "false").lower() == "true"
+_gemini_key = os.getenv("GEMINI_API_KEY", "")
 
 print(f"genai module loaded: {genai is not None}")
 
-if genai is not None and not USE_FALLBACK_ONLY:
+if genai is not None and _gemini_key and not USE_FALLBACK_ONLY:
     try:
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        print(f"Configuring genai with key: {'***' + api_key[-4:] if api_key else 'None'}")
-        genai.configure(api_key=api_key)
+        print(f"Configuring genai with key: {'***' + _gemini_key[-4:] if _gemini_key else 'None'}")
+        genai.configure(api_key=_gemini_key)
         print("GenAI configured successfully")
     except Exception as e:
         print(f"GenAI configuration failed: {e}")
         genai = None
+elif genai is not None and USE_FALLBACK_ONLY:
+    print("Gemini is disabled because USE_FALLBACK_ONLY is enabled")
 
 print("Creating Flask app...")
 app = Flask(__name__)
@@ -416,14 +425,16 @@ def seed_database():
     ]
 
     for user_data in demo_users:
-        user = User(
-            name=user_data["name"],
-            email=user_data["email"],
-            password_hash=hash_password(user_data["password"]),
-            role=user_data.get("role", "patient"),
-            consent_to_clinician_review=user_data.get("consent", False),
-        )
-        db.session.add(user)
+        existing = User.query.filter_by(email=user_data["email"]).first()
+        if not existing:
+            user = User(
+                name=user_data["name"],
+                email=user_data["email"],
+                password_hash=hash_password(user_data["password"]),
+                role=user_data.get("role", "patient"),
+                consent_to_clinician_review=user_data.get("consent", False),
+            )
+            db.session.add(user)
     db.session.commit()
 
     patients = User.query.filter_by(role="patient").all()
@@ -615,7 +626,7 @@ def get_patient_ai_summary(patient):
     if genai is not None:
         try:
             model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
+                model_name="gemini-flash-latest",
                 system_instruction="You are a supportive clinical assistant helping a psychiatrist review anonymized patient trends.",
             )
             response = model.generate_content(
@@ -710,6 +721,31 @@ def login():
     return render_template("login.html")
 
 
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    # Admin-specific login endpoint. Reuses the same auth logic but
+    # ensures only users with role 'psychiatrist' can access admin pages.
+    if current_user.is_authenticated:
+        if getattr(current_user, "role", None) == "psychiatrist":
+            return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        email = request.form.get("email")
+        password = request.form.get("password")
+        user = User.query.filter_by(email=email).first()
+        if user and check_password(password, user.password_hash) and getattr(user, "role", None) == "psychiatrist":
+            login_user(user)
+            return redirect(url_for("admin_dashboard"))
+        flash(get_text("invalid_credentials"), "danger")
+
+    # Prefer an admin-specific template if available; fall back to regular login.
+    try:
+        return render_template("admin_login.html")
+    except Exception:
+        return render_template("login.html")
+
+
 @app.route("/logout")
 @login_required
 def logout():
@@ -759,6 +795,60 @@ def admin_dashboard():
         })
 
     return render_template("admin.html", patients=patients)
+
+
+@app.route("/admin/responses")
+@login_required
+@admin_required
+def admin_anonymous_responses():
+    """View all anonymous user responses without identifying users."""
+    # Get all assessments with anonymized user info
+    assessments_query = (
+        Assessment.query
+        .join(User, Assessment.user_id == User.id)
+        .filter(User.role == "patient")
+        .order_by(Assessment.created_at.desc())
+        .all()
+    )
+    
+    assessments = []
+    for assessment in assessments_query:
+        # Get the latest mood entry for this user
+        latest_mood = MoodEntry.query.filter_by(user_id=assessment.user_id).order_by(MoodEntry.date.desc()).first()
+        
+        # Completely anonymize - only show user ID, no name or email
+        assessments.append({
+            "user_id": assessment.user_id,
+            "date": assessment.created_at,
+            "score": assessment.score,
+            "severity": assessment.severity,
+            "answers": assessment.answers,
+            "latest_mood": {
+                "mood_score": latest_mood.mood_score if latest_mood else None,
+                "stress_level": latest_mood.stress_level if latest_mood else None,
+                "date": latest_mood.date if latest_mood else None,
+            } if latest_mood else None
+        })
+    
+    # Get mood entry statistics (anonymized)
+    mood_stats = db.session.query(
+        MoodEntry.mood_score,
+        db.func.count(MoodEntry.id).label('count')
+    ).group_by(MoodEntry.mood_score).all()
+    
+    # Get severity distribution
+    severity_stats = db.session.query(
+        Assessment.severity,
+        db.func.count(Assessment.id).label('count')
+    ).group_by(Assessment.severity).all()
+    
+    return render_template(
+        "admin_responses.html",
+        assessments=assessments,
+        mood_stats=mood_stats,
+        severity_stats=severity_stats,
+        total_patients=User.query.filter_by(role="patient").count()
+    )
 
 
 @app.route("/admin/user/<int:patient_id>")
@@ -1442,9 +1532,8 @@ def api_chat():
                 app.logger.exception(f"Failed to save chat message: {e}")
         return jsonify({"reply": crisis_msg}), 200
 
-    if not genai or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
+    if not genai or not _gemini_key or USE_FALLBACK_ONLY:
         fallback_reply = get_supportive_fallback(user_message, lang=get_language())
-        # Save fallback response
         if current_user.is_authenticated:
             try:
                 chat_message = ChatMessage(
@@ -1467,16 +1556,14 @@ def api_chat():
 
     # Enhanced system prompt for better question answering
     system_prompt = (
-        "You are AngazaCare AI, a compassionate and culturally aware mental health companion for Kenyans. "
+        "You are AngazaCare AI, a compassionate mental health companion for Kenyans. "
         f"{lang_instruction} "
-        "Provide responses that are warm, realistic, and easy to understand. "
-        "Keep your tone supportive, grounded, and practical. "
-        "Use general wellness advice and avoid medical diagnosis. "
-        "Answer in complete sentences and do not end a response mid-sentence. "
-        "Provide a comprehensive reply with at least 4 sentences and include a clear acknowledgement of the user's feelings, one or two observations, and at least one practical recommendation they can try. "
-        "When the user asks for support, offer realistic next steps, encourage self-care, and remind them that professional help is available if needed. "
-        "If you are unsure, say 'I am not sure, but here is a general suggestion' rather than inventing details. "
-        "Always keep the response helpful, empathetic, and supportive."
+        "Your responses should be warm, supportive, and practical. "
+        "Give direct, helpful answers that acknowledge the user's feelings and provide concrete suggestions they can try. "
+        "Focus on wellness advice, self-care, and practical next steps. "
+        "Keep responses under 150 words but make them meaningful and actionable. "
+        "If the user is in crisis, gently encourage them to reach out to a professional or call Befrienders Kenya at 0800 720 177. "
+        "Be empathetic, clear, and encouraging."
     )
 
     # Add personalized context from user data
@@ -1506,13 +1593,13 @@ def api_chat():
 
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-flash-latest",
             system_instruction=system_prompt,
         )
         response = model.generate_content(
             user_message,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.65,
+                temperature=0.45,
                 top_p=0.95,
                 max_output_tokens=800,
             )
@@ -1619,11 +1706,11 @@ def weekly_report():
 
     try:
         full_message = f"{prompt}\n\nPlease summarize the above user data with supportive recommendations."
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-flash-latest")
         response = model.generate_content(
             full_message,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.65,
+                temperature=0.45,
                 top_p=0.95,
                 max_output_tokens=500,
             )
@@ -1639,5 +1726,280 @@ def weekly_report():
 with app.app_context():
     init_db()
 
+# ===== Voice Chat & Location Services =====
+
+@app.route("/voice_chat")
+@login_required
+def voice_chat():
+    """Voice chat interface for users."""
+    return render_template("voice_chat.html", google_maps_key=os.getenv("GOOGLE_MAPS_API_KEY", ""))
+
+
+@app.route("/api/process_voice", methods=["POST"])
+@login_required
+def process_voice():
+    """Process voice input or text transcription and return AI response with audio."""
+    try:
+        transcript = None
+
+        if "audio" in request.files:
+            audio_file = request.files["audio"]
+            if audio_file.filename == "":
+                return jsonify({"error": "No audio file selected"}), 400
+
+            import tempfile
+            from pathlib import Path
+            import speech_recognition as sr
+            from pydub import AudioSegment
+
+            suffix = Path(audio_file.filename).suffix or ".wav"
+            tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            tmp_in.write(audio_file.read())
+            tmp_in.flush()
+            tmp_in.close()
+
+            input_path = tmp_in.name
+            wav_path = input_path if input_path.lower().endswith(".wav") else input_path + ".wav"
+
+            if not input_path.lower().endswith(".wav"):
+                try:
+                    AudioSegment.from_file(input_path).export(wav_path, format="wav")
+                except Exception as e:
+                    app.logger.warning(f"Audio conversion failed: {e}")
+                    return jsonify({"error": "Unsupported audio format or conversion failed"}), 400
+            else:
+                wav_path = input_path
+
+            recognizer = sr.Recognizer()
+            transcript = "Could not understand audio. Please try again."
+            try:
+                with sr.AudioFile(wav_path) as source:
+                    audio = recognizer.record(source)
+                transcript = recognizer.recognize_google(audio)
+            except Exception as e:
+                app.logger.warning(f"Speech recognition failed: {e}")
+        elif request.is_json and request.json.get("text"):
+            transcript = request.json.get("text", "").strip()
+            if not transcript:
+                return jsonify({"error": "No transcription text provided"}), 400
+        else:
+            return jsonify({"error": "No audio file or transcription text provided"}), 400
+
+        ai_response = get_supportive_fallback(transcript, lang=session.get("language", "en"))
+
+        if genai is not None and transcript and transcript != "Could not understand audio. Please try again.":
+            try:
+                model = genai.GenerativeModel(
+                    model_name="gemini-flash-latest",
+                    system_instruction="You are a compassionate mental health support AI. Respond to the user with empathy, validation, and practical suggestions. Keep responses concise (under 100 words), warm, and supportive."
+                )
+                response = model.generate_content(
+                    transcript,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.4,
+                        top_p=0.9,
+                        max_output_tokens=150,
+                    )
+                )
+                ai_response = response.text.strip() if response.text else ai_response
+            except Exception as e:
+                app.logger.exception(f"Voice AI response failed: {e}")
+
+        audio_base64 = None
+        try:
+            from google.cloud import texttospeech
+            import base64
+
+            tts_client = texttospeech.TextToSpeechClient()
+            synthesis_input = texttospeech.SynthesisInput(text=ai_response)
+            voice = texttospeech.VoiceSelectionParams(
+                language_code="en-US",
+                name="en-US-Neural2-F",
+                ssml_gender=texttospeech.SsmlVoiceGender.FEMALE,
+            )
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=1.0,
+                pitch=0.0,
+            )
+            tts_response = tts_client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config
+            )
+            audio_base64 = base64.b64encode(tts_response.audio_content).decode("utf-8")
+        except Exception as e:
+            app.logger.warning(f"TTS generation failed: {e}")
+            audio_base64 = None
+
+        try:
+            voice_log = VoiceChat(
+                user_id=current_user.id,
+                audio_transcript=transcript,
+                ai_response=ai_response,
+            )
+            db.session.add(voice_log)
+            db.session.commit()
+        except Exception as e:
+            app.logger.exception(f"Failed to log voice chat: {e}")
+            db.session.rollback()
+
+        return jsonify({
+            "transcript": transcript,
+            "response": ai_response,
+            "audio": audio_base64,
+            "success": True
+        })
+    except Exception as e:
+        app.logger.exception(f"Voice processing error: {e}")
+        return jsonify({"error": "Failed to process voice", "success": False}), 500
+
+
+@app.route("/api/nearest_help_units", methods=["POST"])
+@login_required
+def nearest_help_units():
+    """Find the nearest help units based on user's current location."""
+    try:
+        data = request.get_json()
+        user_lat = data.get("latitude")
+        user_lon = data.get("longitude")
+
+        if user_lat is None or user_lon is None:
+            return jsonify({"error": "Location data not provided"}), 400
+
+        help_units = HelpUnit.query.all()
+
+        if not help_units:
+            return jsonify({"units": [], "message": "No help units found in database"}), 200
+
+        units_with_distance = []
+        for unit in help_units:
+            distance = haversine_distance(user_lat, user_lon, unit.latitude, unit.longitude)
+            unit_data = unit.to_dict()
+            unit_data["distance_km"] = round(distance, 2)
+            units_with_distance.append(unit_data)
+
+        units_with_distance.sort(key=lambda x: x["distance_km"])
+        nearest_units = units_with_distance[:5]
+
+        return jsonify({
+            "units": nearest_units,
+            "user_location": {"latitude": user_lat, "longitude": user_lon},
+            "success": True
+        })
+    except Exception as e:
+        app.logger.exception(f"Error finding nearest help units: {e}")
+        return jsonify({"error": "Failed to find nearby help units", "success": False}), 500
+
+
+@app.route("/api/nearby-facilities", methods=["POST"])
+@login_required
+def nearby_facilities():
+    """Accept user location and return a confirmation for nearby facility finding."""
+    try:
+        data = request.get_json(silent=True) or {}
+        latitude = data.get("latitude")
+        longitude = data.get("longitude")
+
+        if latitude is None or longitude is None:
+            return jsonify({"error": "Location data not provided"}), 400
+
+        return jsonify({
+            "success": True,
+            "latitude": latitude,
+            "longitude": longitude,
+            "message": "Location received. Searching for nearby facilities."
+        })
+    except Exception as e:
+        app.logger.exception(f"Failed to process nearby facilities request: {e}")
+        return jsonify({"error": "Failed to process location", "success": False}), 500
+
+
+@app.route("/help_finder")
+@login_required
+def help_finder():
+    """Interactive map to find nearby medical facilities."""
+    google_maps_key = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    return render_template("help_finder.html", google_maps_key=google_maps_key)
+
+
+def seed_help_units():
+    """Seed database with Kenya mental health resources."""
+    if HelpUnit.query.count() > 0:
+        return
+
+    units = [
+        {
+            "name": "Befrienders Kenya",
+            "category": "crisis-line",
+            "phone": "0800 720 177",
+            "email": "support@befrienders.org",
+            "address": "Nairobi, Kenya",
+            "latitude": -1.2921,
+            "longitude": 36.8219,
+            "description": "24/7 crisis support and counseling hotline",
+            "hours": "24/7"
+        },
+        {
+            "name": "Mathare Hospital Mental Health Unit",
+            "category": "hospital",
+            "phone": "020 2084040",
+            "email": "info@matharehospital.co.ke",
+            "address": "Nairobi, Kenya",
+            "latitude": -1.3183,
+            "longitude": 36.8461,
+            "description": "Psychiatric and mental health services",
+            "hours": "Mon-Sun 8AM-6PM"
+        },
+        {
+            "name": "Kenyatta National Hospital Psychiatry",
+            "category": "hospital",
+            "phone": "020 2726300",
+            "email": "psychiatry@knh.or.ke",
+            "address": "Nairobi, Kenya",
+            "latitude": -1.2865,
+            "longitude": 36.8172,
+            "description": "Major teaching hospital with psychiatric services",
+            "hours": "24/7"
+        },
+        {
+            "name": "Mombasa Mental Health Clinic",
+            "category": "clinic",
+            "phone": "041 222 7000",
+            "email": "info@mombasamentalhealth.co.ke",
+            "address": "Mombasa, Kenya",
+            "latitude": -4.0435,
+            "longitude": 39.6682,
+            "description": "Community mental health services and counseling",
+            "hours": "Mon-Fri 8AM-5PM"
+        },
+        {
+            "name": "Kisumu Psychiatric Center",
+            "category": "clinic",
+            "phone": "057 201 8000",
+            "email": "info@kisumupsych.co.ke",
+            "address": "Kisumu, Kenya",
+            "latitude": -0.1022,
+            "longitude": 34.7617,
+            "description": "Mental health outpatient and inpatient services",
+            "hours": "Mon-Sun 8AM-8PM"
+        },
+    ]
+
+    for unit_data in units:
+        unit = HelpUnit(**unit_data)
+        db.session.add(unit)
+
+    db.session.commit()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    init_db()
+    with app.app_context():
+        seed_help_units()
+    if _gemini_key:
+        print("GEMINI_API_KEY found. Using Gemini for AI responses.")
+    else:
+        print("GEMINI_API_KEY missing. The app will use fallback support responses instead of Gemini.")
+    print("Starting Flask app on 127.0.0.1:5000")
+    app.run(debug=True, host="127.0.0.1")
