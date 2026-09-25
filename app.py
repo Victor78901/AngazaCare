@@ -25,6 +25,7 @@ from models import (
     BreathingSession,
     Assignment,
     ClinicianViewLog,
+    ChatMessage,
 )
 
 load_dotenv()
@@ -166,6 +167,9 @@ EMERGENCY_CONTACTS = [
     {"name": "Emergency", "role": "Immediate Help", "phone": "999 / 112", "email": ""},
 ]
 
+# Google Maps API key (get yours at https://developers.google.com/maps/documentation/places/web-service/get-api-key)
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
 
 def get_daily_quote():
     today = date.today()
@@ -200,7 +204,47 @@ def format_osm_address(tags):
     return ", ".join(address_parts) if address_parts else tags.get("name", "Address unavailable")
 
 
+
+
+def query_google_places_nearby(lat, lng, radius=5000):
+    """Query Google Places API for nearby hospitals."""
+    if not GOOGLE_MAPS_API_KEY:
+        raise Exception("Google Maps API key not configured")
+    
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius={radius}&type=hospital&key={GOOGLE_MAPS_API_KEY}"
+    
+    request_obj = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+    )
+    
+    with urllib.request.urlopen(request_obj, timeout=20) as response:
+        data = json.loads(response.read())
+    
+    facilities = []
+    for place in data.get("results", [])[:10]:
+        name = place.get("name", "Unknown")
+        vicinity = place.get("vicinity", "Address unavailable")
+        place_lat = place["geometry"]["location"]["lat"]
+        place_lng = place["geometry"]["location"]["lng"]
+        distance_km = haversine_distance(lat, lng, place_lat, place_lng)
+        
+        facilities.append({
+            "name": name,
+            "address": vicinity,
+            "distance": round(distance_km, 1),
+            "lat": place_lat,
+            "lng": place_lng,
+            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={place_lat},{place_lng}",
+        })
+    
+    return sorted(facilities, key=lambda f: f["distance"])
+
+
 def query_overpass_hospitals(lat, lng):
+    """Query Overpass API for nearby hospitals and clinics."""
     overpass_query = f"""
 [out:json][timeout:25];
 (
@@ -213,18 +257,40 @@ def query_overpass_hospitals(lat, lng):
 );
 out center tags;
 """
-    payload = urllib.parse.urlencode({"data": overpass_query}).encode("utf-8")
-    request_obj = urllib.request.Request(
-        "https://overpass-api.de/api/interpreter",
-        data=payload,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-            "User-Agent": "AngazaCare/1.0 (https://angazacare.example)"
-        },
-    )
-    with urllib.request.urlopen(request_obj, timeout=25) as response:
-        return json.loads(response.read())
+    
+    # Try POST method first
+    try:
+        payload = urllib.parse.urlencode({"data": overpass_query}).encode("utf-8")
+        request_obj = urllib.request.Request(
+            "https://overpass-api.de/api/interpreter",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+        )
+        with urllib.request.urlopen(request_obj, timeout=25) as response:
+            return json.loads(response.read())
+    except Exception as e:
+        app.logger.warning(f"POST request failed: {e}, trying GET method")
+        
+        # Try GET method as fallback
+        try:
+            encoded_query = urllib.parse.quote(overpass_query)
+            url = f"https://overpass-api.de/api/interpreter?data={encoded_query}"
+            request_obj = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            )
+            with urllib.request.urlopen(request_obj, timeout=25) as response:
+                return json.loads(response.read())
+        except Exception as e2:
+            app.logger.error(f"GET request also failed: {e2}")
+            raise Exception(f"Both POST and GET requests failed: {e2}")
 
 
 def parse_overpass_elements(elements, user_lat, user_lng):
@@ -250,6 +316,7 @@ def parse_overpass_elements(elements, user_lat, user_lng):
 
 
 def query_geocode(query, limit=5):
+    """Query Nominatim API for geocoding."""
     params = {
         "q": query,
         "format": "json",
@@ -260,12 +327,16 @@ def query_geocode(query, limit=5):
     request_obj = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "AngazaCare/1.0 (https://angazacare.example)",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(request_obj, timeout=20) as response:
-        return json.loads(response.read())
+    try:
+        with urllib.request.urlopen(request_obj, timeout=20) as response:
+            return json.loads(response.read())
+    except Exception as e:
+        app.logger.error(f"Geocode request failed: {e}")
+        raise
 
 
 def migrate_db():
@@ -281,6 +352,19 @@ def migrate_db():
         cursor.execute("ALTER TABLE user ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'patient';")
     if "consent_to_clinician_review" not in columns:
         cursor.execute("ALTER TABLE user ADD COLUMN consent_to_clinician_review BOOLEAN NOT NULL DEFAULT 0;")
+    
+    # Create chat_message table if it doesn't exist
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            user_message TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES user(id)
+        )
+    """)
+    
     connection.commit()
     connection.close()
 
@@ -695,15 +779,30 @@ def admin_user_detail(patient_id):
 
     assessments_query = Assessment.query.filter_by(user_id=patient.id).order_by(Assessment.created_at.desc())
     mood_query = MoodEntry.query.filter_by(user_id=patient.id).order_by(MoodEntry.date.desc())
+    chat_query = ChatMessage.query.filter_by(user_id=patient.id).order_by(ChatMessage.created_at.desc())
 
-    assessments = [
-        {
+    # Get PHQ-9 questions for assessment details
+    phq9_questions = PHQ9_QUESTIONS
+
+    assessments = []
+    for a in assessments_query.all():
+        assessment_data = {
+            "id": a.id,
             "date": a.created_at,
             "score": a.score,
             "severity": a.severity,
+            "answers": a.answers,
+            "details": []
         }
-        for a in assessments_query.all()
-    ]
+        # Build assessment details with questions and answers
+        if a.answers:
+            for idx, answer in enumerate(a.answers):
+                if idx < len(phq9_questions):
+                    assessment_data["details"].append({
+                        "question": phq9_questions[idx],
+                        "answer": answer
+                    })
+        assessments.append(assessment_data)
 
     if full_access:
         mood_entries = [
@@ -726,6 +825,18 @@ def admin_user_detail(patient_id):
             for m in mood_query.limit(30).all()
         ]
 
+    # Fetch chat history
+    chat_messages = [
+        {
+            "created_at": c.created_at,
+            "user_message": c.user_message,
+            "ai_response": c.ai_response,
+        }
+        for c in chat_query.limit(50).all()
+    ]
+    # Reverse to show oldest first
+    chat_messages = list(reversed(chat_messages))
+
     ai_summary = get_patient_ai_summary(patient)
     masked_name = blur_text(patient.name, reveal_start=2, reveal_end=2)
     masked_email = blur_email(patient.email)
@@ -743,11 +854,19 @@ def admin_user_detail(patient_id):
         patient=patient,
         assessments=assessments,
         mood_entries=mood_entries,
+        chat_messages=chat_messages,
         full_access=full_access,
         ai_summary=ai_summary,
         masked_name=masked_name,
         masked_email=masked_email,
     )
+
+
+KIRAYA_KB = {
+    "crisis_keywords_en": ["hurt myself", "kill myself", "suicide", "want to die", "end it", "can't take it"],
+    "crisis_keywords_sw": ["nidhuru", "kufa", "jiuapo", "kumalizia", "haiwezi"],
+    "befrienders": "0800 720 177",
+}
 
 
 @app.route("/set_language/<lang>")
@@ -919,14 +1038,27 @@ def api_recommend():
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid coordinates."}), 400
 
-    try:
-        os_data = query_overpass_hospitals(user_lat, user_lng)
-    except Exception as e:
-        app.logger.exception(f"Overpass lookup failed: {e}")
-        return jsonify({"error": "Facility lookup failed. Please try again later."}), 502
-
-    elements = os_data.get("elements", [])
-    facilities = parse_overpass_elements(elements, user_lat, user_lng)
+    facilities = []
+    
+    # Try Google Places API first if key is available
+    if GOOGLE_MAPS_API_KEY:
+        try:
+            app.logger.info(f"Querying Google Places for hospitals near {user_lat}, {user_lng}")
+            facilities = query_google_places_nearby(user_lat, user_lng)
+            app.logger.info(f"Found {len(facilities)} facilities from Google Places API")
+        except Exception as e:
+            app.logger.warning(f"Google Places API failed: {e}, trying Overpass")
+    
+    # Fallback to Overpass API if Google failed
+    if not facilities:
+        try:
+            app.logger.info(f"Querying Overpass for hospitals near {user_lat}, {user_lng}")
+            os_data = query_overpass_hospitals(user_lat, user_lng)
+            elements = os_data.get("elements", [])
+            facilities = parse_overpass_elements(elements, user_lat, user_lng)
+            app.logger.info(f"Found {len(facilities)} facilities from Overpass API")
+        except Exception as e:
+            app.logger.warning(f"Overpass API also failed: {e}")
 
     response = {
         "score": score,
@@ -938,7 +1070,7 @@ def api_recommend():
     if not facilities:
         response["fallback"] = {
             "helpline": KIRAYA_KB["befrienders"],
-            "text": "No nearby hospitals or clinics were found within 10 km. Please use local emergency resources or view the Emergency section.",
+            "text": "No nearby hospitals or clinics were found. Please use the Emergency section for urgent help or call 999/112.",
         }
 
     return jsonify(response), 200
@@ -992,13 +1124,6 @@ def breathing():
         return redirect(url_for("breathing"))
     
     return render_template("breathing.html", techniques=BREATHING_TECHNIQUES)
-
-
-KIRAYA_KB = {
-    "crisis_keywords_en": ["hurt myself", "kill myself", "suicide", "want to die", "end it", "can't take it"],
-    "crisis_keywords_sw": ["nidhuru", "kufa", "jiuapo", "kumalizia", "haiwezi"],
-    "befrienders": "0800 720 177",
-}
 
 
 # Language translations for UI
@@ -1303,10 +1428,35 @@ def api_chat():
             f"I hear you and I care. Please reach Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, free)\\n\\n"
             f"Nakuona na nakujali. Tafadhali wasiliana Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, bure)"
         )
+        # Save crisis message to chat history
+        if current_user.is_authenticated:
+            try:
+                chat_message = ChatMessage(
+                    user_id=current_user.id,
+                    user_message=user_message,
+                    ai_response=crisis_msg
+                )
+                db.session.add(chat_message)
+                db.session.commit()
+            except Exception as e:
+                app.logger.exception(f"Failed to save chat message: {e}")
         return jsonify({"reply": crisis_msg}), 200
 
     if not genai or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
-        return jsonify({"reply": get_supportive_fallback(user_message, lang=get_language())}), 200
+        fallback_reply = get_supportive_fallback(user_message, lang=get_language())
+        # Save fallback response
+        if current_user.is_authenticated:
+            try:
+                chat_message = ChatMessage(
+                    user_id=current_user.id,
+                    user_message=user_message,
+                    ai_response=fallback_reply
+                )
+                db.session.add(chat_message)
+                db.session.commit()
+            except Exception as e:
+                app.logger.exception(f"Failed to save chat message: {e}")
+        return jsonify({"reply": fallback_reply}), 200
 
     # Get user's language preference
     user_lang = get_language()
@@ -1371,6 +1521,19 @@ def api_chat():
     except Exception as e:
         app.logger.exception(f"AI chat failed: {e}")
         ai_response = get_supportive_fallback(lang=get_language())
+
+    # Save chat message to database
+    if current_user.is_authenticated:
+        try:
+            chat_message = ChatMessage(
+                user_id=current_user.id,
+                user_message=user_message,
+                ai_response=ai_response
+            )
+            db.session.add(chat_message)
+            db.session.commit()
+        except Exception as e:
+            app.logger.exception(f"Failed to save chat message: {e}")
 
     return jsonify({
         "reply": ai_response,

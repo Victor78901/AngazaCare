@@ -21,25 +21,87 @@
 <div class="alert alert-warning">Full record access denied by patient consent.</div>
 {% endif %}
 
-<h2>Assessments</h2>
-<table class="table">
-    <thead>
-        <tr>
-            <th>Date</th>
-            <th>Score</th>
-            <th>Severity</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for a in assessments %}
-        <tr {% if a.score >= 20 %}style="background:#331f24; color:#fff;"{% endif %}>
-            <td>{{ a.date }}</td>
-            <td>{{ a.score }}</td>
-            <td>{{ a.severity }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<h2>AI Chatbot History</h2>
+{% if chat_messages %}
+<div class="chat-history-section">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date & Time</th>
+                <th>Patient Question</th>
+                <th>AI Response</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chat in chat_messages %}
+            <tr>
+                <td><small>{{ chat.created_at }}</small></td>
+                <td>
+                    <div style="background: #f0f0f0; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                        {{ chat.user_message }}
+                    </div>
+                </td>
+                <td>
+                    <div style="background: #e8f4f8; padding: 8px; border-radius: 4px;">
+                        {{ chat.ai_response }}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p><em>No chat history available.</em></p>
+{% endif %}
+
+<h2>Assessments (PHQ-9)</h2>
+{% if assessments %}
+<div class="assessments-section">
+    {% for a in assessments %}
+    <div class="card assessment-card" style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px;">
+        <h3>Assessment - {{ a.date }} | Score: <strong>{{ a.score }}</strong> ({{ a.severity }})</h3>
+        
+        {% if a.details %}
+        <div style="margin-top: 10px;">
+            <table class="table" style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Question</th>
+                        <th>Answer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for detail in a.details %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ detail.question }}</td>
+                        <td>
+                            {% if detail.answer == 0 %}
+                            <span style="background: #90EE90; padding: 4px 8px; border-radius: 3px;">Not at all (0)</span>
+                            {% elif detail.answer == 1 %}
+                            <span style="background: #FFD700; padding: 4px 8px; border-radius: 3px;">Several days (1)</span>
+                            {% elif detail.answer == 2 %}
+                            <span style="background: #FFA500; padding: 4px 8px; border-radius: 3px;">More than half (2)</span>
+                            {% elif detail.answer == 3 %}
+                            <span style="background: #FF6347; padding: 4px 8px; border-radius: 3px;">Nearly every day (3)</span>
+                            {% else %}
+                            <span>{{ detail.answer }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p><em>No assessments available.</em></p>
+{% endif %}
 
 <h2>Recent Mood Entries</h2>
 <table class="table">
