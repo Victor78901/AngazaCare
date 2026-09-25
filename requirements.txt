@@ -3,3 +3,4 @@ gunicorn
 google-generativeai
 python-dotenv
 werkzeug
+flask-login
