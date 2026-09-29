@@ -7,11 +7,9 @@ import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
 try:
-    from google import genai
-    from google.genai import types as genai_types
+    import google.generativeai as genai
 except Exception:
     genai = None
-    genai_types = None
 from dotenv import load_dotenv
 
 from flask import Flask, flash, redirect, render_template, request, url_for, jsonify, session
@@ -27,45 +25,22 @@ from models import (
     BreathingSession,
     Assignment,
     ClinicianViewLog,
-    ChatMessage,
 )
 
 load_dotenv()
 
-print("Loading environment variables...")
-print(f"USE_FALLBACK_ONLY: {os.getenv('USE_FALLBACK_ONLY', 'not set')}")
-print(f"GEMINI_API_KEY set: {bool(os.getenv('GEMINI_API_KEY'))}")
-
 # Set to True to use fallback responses only (when API quota is exhausted)
 USE_FALLBACK_ONLY = os.getenv("USE_FALLBACK_ONLY", "false").lower() == "true"
 
-print(f"genai module loaded: {genai is not None}")
-
-# google-genai client instance (replaces the deprecated genai.configure() pattern).
-genai_client = None
 if genai is not None and not USE_FALLBACK_ONLY:
     try:
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        print(f"Configuring genai with key: {'***' + api_key[-4:] if api_key else 'None'}")
-        genai_client = genai.Client(api_key=api_key)
-        print("GenAI configured successfully")
-    except Exception as e:
-        print(f"GenAI configuration failed: {e}")
-        genai_client = None
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    except Exception:
+        genai = None
 
-print("Creating Flask app...")
-app = Flask(__name__, instance_path="/tmp/instance")
-os.makedirs(app.instance_path, exist_ok=True)
-
+app = Flask(__name__)
 app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
-
-database_url = os.environ.get(
-    "DATABASE_URL",
-    "sqlite:////tmp/instance/app.db",
-)
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
@@ -126,8 +101,7 @@ ASSESSMENT_LEVELS = [
     (0, 4, "Minimal", "You are doing well. Keep supporting your mental health with healthy habits.", "#64ffda"),
     (5, 9, "Mild", "Some stress may be present. Light self-care and reflection can help.", "#ffc864"),
     (10, 14, "Moderate", "Consider sharing your feelings with a trusted person or professional.", "#ff8a64"),
-    (15, 19, "Moderately severe", "More support may be helpful. Reach out to someone you trust and keep monitoring your wellbeing.", "#ff7b4d"),
-    (20, 27, "Severe", "Urgent support is recommended. Reach out to a mental health professional or emergency services.", "#ff6464"),
+    (15, 30, "Severe", "Urgent support is recommended. Reach out to a mental health professional.", "#ff6464"),
 ]
 
 RECOMMENDATION_RULES = [
@@ -180,8 +154,70 @@ EMERGENCY_CONTACTS = [
     {"name": "Emergency", "role": "Immediate Help", "phone": "999 / 112", "email": ""},
 ]
 
-# Google Maps API key (get yours at https://developers.google.com/maps/documentation/places/web-service/get-api-key)
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+def fetch_json(url, data=None):
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"User-Agent": "AngazaCare/1.0 hospital finder"},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def geocode_location(query):
+    params = urllib.parse.urlencode({"q": query, "format": "jsonv2", "limit": 1})
+    results = fetch_json(f"https://nominatim.openstreetmap.org/search?{params}")
+    if not results:
+        return None
+    return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])}
+
+
+def distance_km(lat1, lng1, lat2, lng2):
+    earth_radius_km = 6371
+    lat1, lat2 = math.radians(lat1), math.radians(lat2)
+    delta_lat = lat2 - lat1
+    delta_lng = math.radians(lng2 - lng1)
+    value = math.sin(delta_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lng / 2) ** 2
+    return earth_radius_km * 2 * math.atan2(math.sqrt(value), math.sqrt(1 - value))
+
+
+def find_nearby_facilities(lat, lng):
+    query = f"[out:json][timeout:20];(nwr(around:20000,{lat},{lng})[amenity~\"^(hospital|clinic)$\"];);out center tags;"
+    response = fetch_json(
+        "https://overpass-api.de/api/interpreter",
+        data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
+    )
+    facilities = []
+    seen = set()
+    for element in response.get("elements", []):
+        tags = element.get("tags", {})
+        center = element.get("center", element)
+        facility_lat = center.get("lat")
+        facility_lng = center.get("lon")
+        name = tags.get("name") or tags.get("operator")
+        if not name or facility_lat is None or facility_lng is None:
+            continue
+        facility_lat, facility_lng = float(facility_lat), float(facility_lng)
+        key = (name.casefold(), round(facility_lat, 5), round(facility_lng, 5))
+        if key in seen:
+            continue
+        seen.add(key)
+        address = ", ".join(filter(None, (
+            tags.get("addr:housenumber", "") + (" " if tags.get("addr:housenumber") and tags.get("addr:street") else "") + tags.get("addr:street", ""),
+            tags.get("addr:suburb") or tags.get("addr:city") or tags.get("addr:town", ""),
+            tags.get("addr:postcode", ""),
+        )))
+        facilities.append({
+            "name": name,
+            "type": tags.get("amenity", "healthcare"),
+            "address": address,
+            "lat": facility_lat,
+            "lng": facility_lng,
+            "distance_km": round(distance_km(lat, lng, facility_lat, facility_lng), 1),
+        })
+    facilities.sort(key=lambda facility: facility["distance_km"])
+    return facilities
 
 
 def get_daily_quote():
@@ -194,162 +230,7 @@ def get_assessment_level(score):
     for minimum, maximum, label, message, color in ASSESSMENT_LEVELS:
         if minimum <= score <= maximum:
             return {"label": label, "message": message, "color": color}
-    return {"label": ASSESSMENT_LEVELS[-1][2], "message": ASSESSMENT_LEVELS[-1][3], "color": ASSESSMENT_LEVELS[-1][4]}
-
-
-def haversine_distance(lat1, lon1, lat2, lon2):
-    radius_km = 6371.0
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return radius_km * c
-
-
-def format_osm_address(tags):
-    address_parts = []
-    for key in ["addr:housenumber", "addr:street", "addr:suburb", "addr:city", "addr:state", "addr:postcode"]:
-        value = tags.get(key)
-        if value:
-            address_parts.append(value)
-    return ", ".join(address_parts) if address_parts else tags.get("name", "Address unavailable")
-
-
-
-
-def query_google_places_nearby(lat, lng, radius=5000):
-    """Query Google Places API for nearby hospitals."""
-    if not GOOGLE_MAPS_API_KEY:
-        raise Exception("Google Maps API key not configured")
-    
-    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius={radius}&type=hospital&key={GOOGLE_MAPS_API_KEY}"
-    
-    request_obj = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-    )
-    
-    with urllib.request.urlopen(request_obj, timeout=20) as response:
-        data = json.loads(response.read())
-    
-    facilities = []
-    for place in data.get("results", [])[:10]:
-        name = place.get("name", "Unknown")
-        vicinity = place.get("vicinity", "Address unavailable")
-        place_lat = place["geometry"]["location"]["lat"]
-        place_lng = place["geometry"]["location"]["lng"]
-        distance_km = haversine_distance(lat, lng, place_lat, place_lng)
-        
-        facilities.append({
-            "name": name,
-            "address": vicinity,
-            "distance": round(distance_km, 1),
-            "lat": place_lat,
-            "lng": place_lng,
-            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={place_lat},{place_lng}",
-        })
-    
-    return sorted(facilities, key=lambda f: f["distance"])
-
-
-def query_overpass_hospitals(lat, lng):
-    """Query Overpass API for nearby hospitals and clinics."""
-    overpass_query = f"""
-[out:json][timeout:25];
-(
-  node["amenity"="hospital"](around:10000,{lat},{lng});
-  way["amenity"="hospital"](around:10000,{lat},{lng});
-  relation["amenity"="hospital"](around:10000,{lat},{lng});
-  node["healthcare"="clinic"](around:10000,{lat},{lng});
-  way["healthcare"="clinic"](around:10000,{lat},{lng});
-  relation["healthcare"="clinic"](around:10000,{lat},{lng});
-);
-out center tags;
-"""
-    
-    # Try POST method first
-    try:
-        payload = urllib.parse.urlencode({"data": overpass_query}).encode("utf-8")
-        request_obj = urllib.request.Request(
-            "https://overpass-api.de/api/interpreter",
-            data=payload,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            },
-        )
-        with urllib.request.urlopen(request_obj, timeout=25) as response:
-            return json.loads(response.read())
-    except Exception as e:
-        app.logger.warning(f"POST request failed: {e}, trying GET method")
-        
-        # Try GET method as fallback
-        try:
-            encoded_query = urllib.parse.quote(overpass_query)
-            url = f"https://overpass-api.de/api/interpreter?data={encoded_query}"
-            request_obj = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                },
-            )
-            with urllib.request.urlopen(request_obj, timeout=25) as response:
-                return json.loads(response.read())
-        except Exception as e2:
-            app.logger.error(f"GET request also failed: {e2}")
-            raise Exception(f"Both POST and GET requests failed: {e2}")
-
-
-def parse_overpass_elements(elements, user_lat, user_lng):
-    facilities = []
-    for element in elements:
-        tags = element.get("tags", {})
-        center = element.get("center") or {}
-        lat = center.get("lat") if center else element.get("lat")
-        lon = center.get("lon") if center else element.get("lon")
-        if lat is None or lon is None:
-            continue
-        distance_km = haversine_distance(user_lat, user_lng, float(lat), float(lon))
-        name = tags.get("name") or tags.get("healthcare") or tags.get("amenity") or "Unknown facility"
-        facilities.append({
-            "name": name,
-            "address": format_osm_address(tags),
-            "distance": round(distance_km, 1),
-            "lat": float(lat),
-            "lng": float(lon),
-            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}",
-        })
-    return sorted(facilities, key=lambda f: f["distance"])[:10]
-
-
-def query_geocode(query, limit=5):
-    """Query Nominatim API for geocoding."""
-    params = {
-        "q": query,
-        "format": "json",
-        "limit": str(limit),
-        "addressdetails": "1",
-    }
-    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
-    request_obj = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request_obj, timeout=20) as response:
-            return json.loads(response.read())
-    except Exception as e:
-        app.logger.error(f"Geocode request failed: {e}")
-        raise
+    return ASSESSMENT_LEVELS[-1]
 
 
 def migrate_db():
@@ -365,51 +246,20 @@ def migrate_db():
         cursor.execute("ALTER TABLE user ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'patient';")
     if "consent_to_clinician_review" not in columns:
         cursor.execute("ALTER TABLE user ADD COLUMN consent_to_clinician_review BOOLEAN NOT NULL DEFAULT 0;")
-    
-    # Create chat_message table if it doesn't exist
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS chat_message (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            user_message TEXT NOT NULL,
-            ai_response TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES user(id)
-        )
-    """)
-    
     connection.commit()
     connection.close()
 
 
 def init_db():
     with app.app_context():
-        try:
-            migrate_db()
-            db_path = os.path.join(os.getcwd(), "angazacare.db")
-            print(f"Database path: {db_path}")
-            print(f"Database exists: {os.path.exists(db_path)}")
-            
-            if not os.path.exists(db_path):
-                print("Creating database tables...")
-                db.create_all()
-                print("Seeding database...")
+        migrate_db()
+        if not os.path.exists("angazacare.db"):
+            db.create_all()
+            seed_database()
+        else:
+            db.create_all()
+            if User.query.count() == 0:
                 seed_database()
-                print("Database seeded successfully")
-            else:
-                print("Database exists, ensuring tables are created...")
-                db.create_all()
-                user_count = User.query.count()
-                print(f"Current user count: {user_count}")
-                if user_count == 0:
-                    print("Seeding database with demo data...")
-                    seed_database()
-                    print("Database seeded successfully")
-        except Exception as e:
-            print(f"Database initialization error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
 
 
 def hash_password(password):
@@ -625,13 +475,15 @@ def get_patient_ai_summary(patient):
     )
 
     ai_text = None
-    if genai_client is not None:
+    if genai is not None:
         try:
-            response = genai_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=user_message,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction="You are a supportive clinical assistant helping a psychiatrist review anonymized patient trends.",
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction="You are a supportive clinical assistant helping a psychiatrist review anonymized patient trends.",
+            )
+            response = model.generate_content(
+                user_message,
+                generation_config=genai.types.GenerationConfig(
                     temperature=0.35,
                     top_p=0.85,
                     max_output_tokens=120,
@@ -790,30 +642,15 @@ def admin_user_detail(patient_id):
 
     assessments_query = Assessment.query.filter_by(user_id=patient.id).order_by(Assessment.created_at.desc())
     mood_query = MoodEntry.query.filter_by(user_id=patient.id).order_by(MoodEntry.date.desc())
-    chat_query = ChatMessage.query.filter_by(user_id=patient.id).order_by(ChatMessage.created_at.desc())
 
-    # Get PHQ-9 questions for assessment details
-    phq9_questions = PHQ9_QUESTIONS
-
-    assessments = []
-    for a in assessments_query.all():
-        assessment_data = {
-            "id": a.id,
+    assessments = [
+        {
             "date": a.created_at,
             "score": a.score,
             "severity": a.severity,
-            "answers": a.answers,
-            "details": []
         }
-        # Build assessment details with questions and answers
-        if a.answers:
-            for idx, answer in enumerate(a.answers):
-                if idx < len(phq9_questions):
-                    assessment_data["details"].append({
-                        "question": phq9_questions[idx],
-                        "answer": answer
-                    })
-        assessments.append(assessment_data)
+        for a in assessments_query.all()
+    ]
 
     if full_access:
         mood_entries = [
@@ -836,18 +673,6 @@ def admin_user_detail(patient_id):
             for m in mood_query.limit(30).all()
         ]
 
-    # Fetch chat history
-    chat_messages = [
-        {
-            "created_at": c.created_at,
-            "user_message": c.user_message,
-            "ai_response": c.ai_response,
-        }
-        for c in chat_query.limit(50).all()
-    ]
-    # Reverse to show oldest first
-    chat_messages = list(reversed(chat_messages))
-
     ai_summary = get_patient_ai_summary(patient)
     masked_name = blur_text(patient.name, reveal_start=2, reveal_end=2)
     masked_email = blur_email(patient.email)
@@ -865,19 +690,11 @@ def admin_user_detail(patient_id):
         patient=patient,
         assessments=assessments,
         mood_entries=mood_entries,
-        chat_messages=chat_messages,
         full_access=full_access,
         ai_summary=ai_summary,
         masked_name=masked_name,
         masked_email=masked_email,
     )
-
-
-KIRAYA_KB = {
-    "crisis_keywords_en": ["hurt myself", "kill myself", "suicide", "want to die", "end it", "can't take it"],
-    "crisis_keywords_sw": ["nidhuru", "kufa", "jiuapo", "kumalizia", "haiwezi"],
-    "befrienders": "0800 720 177",
-}
 
 
 @app.route("/set_language/<lang>")
@@ -1013,103 +830,56 @@ def recommendations():
             Recommendation.score_range_max >= last_assessment.score,
         ).first()
         tips = json.loads(recommendation.tips) if recommendation else []
-        severity_data = get_assessment_level(last_assessment.score)
     else:
         tips = []
-        severity_data = None
-    return render_template(
-        "recommendations.html",
-        tips=tips,
-        assessment=last_assessment,
-        severity_data=severity_data,
-        current_lang=get_language(),
-        t=TRANSLATIONS[get_language()],
-    )
-
-
-@app.route("/api/recommend", methods=["POST"])
-@login_required
-def api_recommend():
-    data = request.get_json(silent=True) or {}
-    score = data.get("score")
-    lat = data.get("lat")
-    lng = data.get("lng")
-
-    try:
-        score = int(score)
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid score."}), 400
-
-    if lat is None or lng is None:
-        return jsonify({"error": "Location coordinates are required."}), 400
-
-    try:
-        user_lat = float(lat)
-        user_lng = float(lng)
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid coordinates."}), 400
-
-    facilities = []
-    
-    # Try Google Places API first if key is available
-    if GOOGLE_MAPS_API_KEY:
-        try:
-            app.logger.info(f"Querying Google Places for hospitals near {user_lat}, {user_lng}")
-            facilities = query_google_places_nearby(user_lat, user_lng)
-            app.logger.info(f"Found {len(facilities)} facilities from Google Places API")
-        except Exception as e:
-            app.logger.warning(f"Google Places API failed: {e}, trying Overpass")
-    
-    # Fallback to Overpass API if Google failed
-    if not facilities:
-        try:
-            app.logger.info(f"Querying Overpass for hospitals near {user_lat}, {user_lng}")
-            os_data = query_overpass_hospitals(user_lat, user_lng)
-            elements = os_data.get("elements", [])
-            facilities = parse_overpass_elements(elements, user_lat, user_lng)
-            app.logger.info(f"Found {len(facilities)} facilities from Overpass API")
-        except Exception as e:
-            app.logger.warning(f"Overpass API also failed: {e}")
-
-    response = {
-        "score": score,
-        "severity": get_assessment_level(score)["label"],
-        "message": get_assessment_level(score)["message"],
-        "facilities": facilities,
-    }
-
-    if not facilities:
-        response["fallback"] = {
-            "helpline": KIRAYA_KB["befrienders"],
-            "text": "No nearby hospitals or clinics were found. Please use the Emergency section for urgent help or call 999/112.",
-        }
-
-    return jsonify(response), 200
+    return render_template("recommendations.html", tips=tips, assessment=last_assessment)
 
 
 @app.route("/api/geocode", methods=["POST"])
 @login_required
 def api_geocode():
-    data = request.get_json(silent=True) or {}
-    query = (data.get("query") or "").strip()
-    if not query:
-        return jsonify({"error": "Location query is required."}), 400
-
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query", "")).strip()
+    if len(query) < 2 or len(query) > 160:
+        return jsonify({"error": "Enter a town or city name."}), 400
     try:
-        results = query_geocode(query, limit=5)
-        formatted_results = [
-            {
-                "display_name": item.get("display_name"),
-                "lat": item.get("lat"),
-                "lon": item.get("lon"),
-            }
-            for item in results
-            if item.get("lat") and item.get("lon")
-        ]
-        return jsonify({"results": formatted_results}), 200
-    except Exception as e:
-        app.logger.exception(f"Geocode lookup failed: {e}")
-        return jsonify({"error": "Location lookup failed. Please try again later."}), 502
+        location = geocode_location(query)
+    except Exception:
+        app.logger.exception("Location lookup failed")
+        return jsonify({"error": "Location lookup is temporarily unavailable. Please try again."}), 502
+    if location is None:
+        return jsonify({"error": "No matching town or city was found. Try another search."}), 404
+    return jsonify(location)
+
+
+@app.route("/api/recommend", methods=["POST"])
+@login_required
+def api_recommend():
+    payload = request.get_json(silent=True) or {}
+    try:
+        lat = float(payload.get("lat"))
+        lng = float(payload.get("lng"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "A valid location is required."}), 400
+    if not math.isfinite(lat) or not math.isfinite(lng) or not -90 <= lat <= 90 or not -180 <= lng <= 180:
+        return jsonify({"error": "A valid location is required."}), 400
+    try:
+        facilities = find_nearby_facilities(lat, lng)
+    except Exception:
+        app.logger.exception("Nearby facility lookup failed")
+        maps_query = urllib.parse.urlencode({"api": "1", "query": f"hospitals near {lat},{lng}"})
+        return jsonify({
+            "error": "Nearby facility search is temporarily unavailable.",
+            "fallback": {
+                "text": "Search for nearby hospitals directly on Google Maps, or use the Emergency page for support contacts.",
+                "maps_url": f"https://www.google.com/maps/search/?{maps_query}",
+            },
+        }), 502
+    nearest = next(
+        (facility for facility in facilities if facility["type"] == "hospital"),
+        facilities[0] if facilities else None,
+    )
+    return jsonify({"facilities": facilities, "nearest": nearest})
 
 
 @app.route("/emergency")
@@ -1135,6 +905,13 @@ def breathing():
         return redirect(url_for("breathing"))
     
     return render_template("breathing.html", techniques=BREATHING_TECHNIQUES)
+
+
+KIRAYA_KB = {
+    "crisis_keywords_en": ["hurt myself", "kill myself", "suicide", "want to die", "end it", "can't take it"],
+    "crisis_keywords_sw": ["nidhuru", "kufa", "jiuapo", "kumalizia", "haiwezi"],
+    "befrienders": "0800 720 177",
+}
 
 
 # Language translations for UI
@@ -1166,37 +943,6 @@ TRANSLATIONS = {
         "share_mood": "Share your mood, stress, and reflections.",
         "get_support_tips": "Get support tips based on your latest score.",
         "access_support": "Access urgent Kenya-specific support contacts.",
-        "recommendations_title": "Wellness Recommendations",
-        "last_assessment_score": "Your last assessment score was",
-        "no_assessment_recorded": "No assessment recorded yet.",
-        "complete_assessment": "Complete an",
-        "assessment_link": "assessment",
-        "to_receive_tips": "to receive tailored tips.",
-        "severity_label": "Severity",
-        "urgent_recommendation": "Please seek urgent help and use the Emergency section if needed.",
-        "emergency_link_text": "View Emergency resources",
-        "hospital_recommendation_title": "Hospital Recommendation",
-        "diagnostic_disclaimer": "This is not a diagnostic tool. It provides nearby care suggestions only.",
-        "hospital_recommendation_description": "Get nearby hospitals and clinics based on your location, or enter a town if location access is denied.",
-        "use_my_location": "Use my location",
-        "enter_town_manually": "Enter town manually",
-        "manual_location_placeholder": "Town, city or neighborhood",
-        "search_location": "Search location",
-        "no_facilities_found": "No nearby facilities were found. Please check the Emergency section or call your local helpline.",
-        "helpline_label": "Helpline",
-        "directions_link_text": "Get directions",
-        "searching_nearby": "Searching for nearby facilities...",
-        "facility_query_failed": "Facility search failed. Please try again later.",
-        "recommendations_found": "Nearby facilities found:",
-        "manual_enter_prompt": "Enter your town or city to find nearby locations.",
-        "geolocation_unsupported": "Geolocation is not supported by your browser.",
-        "locating": "Locating...",
-        "location_denied": "Location access denied. You can enter your town manually below.",
-        "enter_location_query": "Please enter a location query.",
-        "geocoding": "Looking up location...",
-        "geocode_failed": "Location lookup failed. Please try a different town or city.",
-        "use_this_location": "Use this location",
-        "select_location": "Select the best match for your location.",
         "features": "Features",
         "daily_checkins_description": "Log mood, stress, and note your feelings in one place.",
         "insightful_charts_description": "See your weekly trends and understand what affects your wellbeing.",
@@ -1209,14 +955,6 @@ TRANSLATIONS = {
         "type_message": "Type a message...",
         "send": "Send",
         "ai_resting": "AngazaCare AI is resting, please try again",
-        "voice_chat_button": "Voice Chat",
-        "voice_input_start": "Start voice input",
-        "voice_input_stop": "Stop listening",
-        "voice_input_unsupported": "Voice input is not supported in this browser.",
-        "voice_input_listening": "Listening...",
-        "voice_input_unavailable": "Your browser cannot use voice input at the moment.",
-        "voice_input_error": "There was an error with voice recognition. Please try again.",
-        "type_message_empty": "Please type a message to send.",
         "footer": "AngazaCare © 2026 — Mental health support that feels personal.",
         "positive_mood": "Positive mood support",
         "mild_support": "Mild support",
@@ -1266,14 +1004,6 @@ TRANSLATIONS = {
         "type_message": "Andika ujumbe...",
         "send": "Tuma",
         "ai_resting": "AI ya AngazaCare inapumzika, tafadhali jaribu tena",
-        "type_message_empty": "Tafadhali andika ujumbe kabla ya kutuma.",
-        "voice_input_start": "Anza kuzungumza kwa sauti",
-        "voice_input_stop": "Acha kusikiliza",
-        "voice_input_unsupported": "Utambuzi wa sauti hauendani na kivinjari hiki.",
-        "voice_input_listening": "Inasikiliza...",
-        "voice_input_unavailable": "Kivinjari chako hakiwezi kutumia sauti kwa sasa.",
-        "voice_input_error": "Kuna tatizo na utambuzi wa sauti. Tafadhali jaribu tena.",
-        "voice_chat_button": "Sauti Chat",
         "footer": "AngazaCare © 2026 — Msaada wa afya ya akili ambao unajisikia binafsi.",
         "welcome_title": "Karibu AngazaCare",
         "welcome_headline": "Fuata hisia zako, shinda msongo, na upate msaada wa utulivu.",
@@ -1320,31 +1050,6 @@ TRANSLATIONS = {
         "complete_assessment": "Kamilisha",
         "assessment_link": "tathmini",
         "to_receive_tips": "kupata vidokezo vilivyopewa mwili.",
-        "severity_label": "Ukadiriaji",
-        "urgent_recommendation": "Tafadhali tafuta msaada wa haraka na tumia sehemu ya Dharura ikiwa unahitaji.",
-        "emergency_link_text": "Tazama rasilimali za Dharura",
-        "hospital_recommendation_title": "Mapendekezo ya Hospitali",
-        "diagnostic_disclaimer": "Hii sio chombo cha utambuzi. Inatoa mapendekezo ya huduma tu.",
-        "hospital_recommendation_description": "Pata hospitali na kliniki za karibu kulingana na eneo lako, au ingiza mji ikiwa ufikiaji wa eneo umekwisha katishwa.",
-        "use_my_location": "Tumia eneo langu",
-        "enter_town_manually": "Weka mji kwa mkono",
-        "manual_location_placeholder": "Mji, mtaa, au eneo",
-        "search_location": "Tafuta eneo",
-        "no_facilities_found": "Hakuna vituo vya karibu vilivyopatikana. Tafadhali angalia sehemu ya Dharura au piga huduma ya msaada ya eneo lako.",
-        "helpline_label": "Msaada",
-        "directions_link_text": "Pata maelekezo",
-        "searching_nearby": "Kutatua vituo vya karibu...",
-        "facility_query_failed": "Utafutaji wa vituo ulishindikana. Tafadhali jaribu tena baadaye.",
-        "recommendations_found": "Vituo vya karibu vimepatikana:",
-        "manual_enter_prompt": "Weka mji au jiji lako kupata maeneo ya karibu.",
-        "geolocation_unsupported": "Geolocation haitegemezwi na kivinjari chako.",
-        "locating": "Kutatua eneo...",
-        "location_denied": "Ufikiaji wa eneo umekatishwa. Unaweza kuingiza mji kwa mkono hapa chini.",
-        "enter_location_query": "Tafadhali ingiza swali la eneo.",
-        "geocoding": "Inatafuta eneo...",
-        "geocode_failed": "Utafutaji wa eneo ulishindikana. Tafadhali jaribu mji au jiji tofauti.",
-        "use_this_location": "Tumia eneo hili",
-        "select_location": "Chagua matokeo yanayofaa zaidi kwa eneo lako.",
         "emergency_support": "Msaada wa Dharura",
         "emergency_context": "Ikiwa unahitaji msaada wa haraka, wasiliana na mojawapo ya rasilimali hizi mara moja.",
         "phone": "Simu",
@@ -1439,35 +1144,10 @@ def api_chat():
             f"I hear you and I care. Please reach Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, free)\\n\\n"
             f"Nakuona na nakujali. Tafadhali wasiliana Befrienders Kenya: {KIRAYA_KB['befrienders']} (24/7, bure)"
         )
-        # Save crisis message to chat history
-        if current_user.is_authenticated:
-            try:
-                chat_message = ChatMessage(
-                    user_id=current_user.id,
-                    user_message=user_message,
-                    ai_response=crisis_msg
-                )
-                db.session.add(chat_message)
-                db.session.commit()
-            except Exception as e:
-                app.logger.exception(f"Failed to save chat message: {e}")
         return jsonify({"reply": crisis_msg}), 200
 
-    if not genai_client or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
-        fallback_reply = get_supportive_fallback(user_message, lang=get_language())
-        # Save fallback response
-        if current_user.is_authenticated:
-            try:
-                chat_message = ChatMessage(
-                    user_id=current_user.id,
-                    user_message=user_message,
-                    ai_response=fallback_reply
-                )
-                db.session.add(chat_message)
-                db.session.commit()
-            except Exception as e:
-                app.logger.exception(f"Failed to save chat message: {e}")
-        return jsonify({"reply": fallback_reply}), 200
+    if not genai or not os.getenv("GEMINI_API_KEY") or USE_FALLBACK_ONLY:
+        return jsonify({"reply": get_supportive_fallback(user_message, lang=get_language())}), 200
 
     # Get user's language preference
     user_lang = get_language()
@@ -1516,11 +1196,13 @@ def api_chat():
         system_prompt = f"{system_prompt}\n\nUser Context:\n" + "\n".join(user_context)
 
     try:
-        response = genai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=user_message,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=system_prompt,
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction=system_prompt,
+        )
+        response = model.generate_content(
+            user_message,
+            generation_config=genai.types.GenerationConfig(
                 temperature=0.65,
                 top_p=0.95,
                 max_output_tokens=800,
@@ -1530,19 +1212,6 @@ def api_chat():
     except Exception as e:
         app.logger.exception(f"AI chat failed: {e}")
         ai_response = get_supportive_fallback(lang=get_language())
-
-    # Save chat message to database
-    if current_user.is_authenticated:
-        try:
-            chat_message = ChatMessage(
-                user_id=current_user.id,
-                user_message=user_message,
-                ai_response=ai_response
-            )
-            db.session.add(chat_message)
-            db.session.commit()
-        except Exception as e:
-            app.logger.exception(f"Failed to save chat message: {e}")
 
     return jsonify({
         "reply": ai_response,
@@ -1585,7 +1254,7 @@ def mood_history():
 @app.route("/api/weekly-report")
 @login_required
 def weekly_report():
-    if not genai_client or not os.getenv("GEMINI_API_KEY"):
+    if not genai or not os.getenv("GEMINI_API_KEY"):
         return jsonify({"error": "AI is resting, try again"}), 500
     
     today = date.today()
@@ -1628,10 +1297,10 @@ def weekly_report():
 
     try:
         full_message = f"{prompt}\n\nPlease summarize the above user data with supportive recommendations."
-        response = genai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=full_message,
-            config=genai_types.GenerateContentConfig(
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        response = model.generate_content(
+            full_message,
+            generation_config=genai.types.GenerationConfig(
                 temperature=0.65,
                 top_p=0.95,
                 max_output_tokens=500,
@@ -1644,9 +1313,6 @@ def weekly_report():
         return jsonify({"report": get_supportive_fallback()}), 200
 
 
-# Initialize database on startup
-with app.app_context():
-    init_db()
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    init_db()
+    app.run(debug=True)
