@@ -2,14 +2,19 @@
 {% block content %}
 <div class="card" style="max-width: 540px; margin: 2rem auto;">
     <h2>{{ t.get('login_title', 'Login') }}</h2>
-    <form method="POST">
+    <form method="POST" action="{{ url_for('login') }}" aria-label="{{ t.get('login_title', 'Login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="form-field">
             <label for="email">{{ t.get('email', 'Email') }}</label>
-            <input type="email" name="email" id="email" required />
+            <input type="email" name="email" id="email" autocomplete="email" maxlength="120" required />
         </div>
         <div class="form-field">
             <label for="password">{{ t.get('password', 'Password') }}</label>
-            <input type="password" name="password" id="password" required />
+            <input type="password" name="password" id="password" autocomplete="current-password" required />
+        </div>
+        <div class="login-options">
+            <input type="checkbox" name="remember" id="remember" />
+            <label for="remember">{{ t.get('remember_me', 'Remember me') }}</label>
         </div>
         <button class="btn" type="submit">{{ t.get('login_button', 'Login') }}</button>
     </form>

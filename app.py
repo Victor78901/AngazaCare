@@ -2,6 +2,8 @@ import json
 import math
 import os
 import random
+import re
+import secrets
 import sqlite3
 import urllib.parse
 import urllib.request
@@ -15,6 +17,11 @@ from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, url_for, jsonify, session
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 import bcrypt
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import generate_csrf, validate_csrf
+from werkzeug.security import check_password_hash, generate_password_hash
+from wtforms.validators import ValidationError
 
 from models import (
     Assessment,
@@ -39,11 +46,33 @@ if genai is not None and not USE_FALLBACK_ONLY:
         genai = None
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
+app_env = os.getenv("APP_ENV", "development").lower()
+secret_key = os.getenv("SECRET_KEY")
+if not secret_key and app_env == "production":
+    raise RuntimeError("SECRET_KEY must be configured in production")
+session_cookie_secure = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
+if app_env == "production" and not session_cookie_secure:
+    raise RuntimeError("SESSION_COOKIE_SECURE must be enabled in production")
+app.config["SECRET_KEY"] = secret_key or secrets.token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = session_cookie_secure
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SECURE"] = app.config["SESSION_COOKIE_SECURE"]
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
+rate_limit_storage_uri = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+if app_env == "production" and rate_limit_storage_uri.startswith("memory://"):
+    raise RuntimeError("RATELIMIT_STORAGE_URI must use shared storage in production")
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    storage_uri=rate_limit_storage_uri,
+)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.login_message_category = "info"
@@ -263,12 +292,13 @@ def init_db():
 
 
 def hash_password(password):
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return generate_password_hash(password)
 
 
 def check_password(password, hashed):
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    if hashed.startswith(("$2a$", "$2b$", "$2y$")):
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    return check_password_hash(hashed, password)
 
 
 def seed_database():
@@ -536,10 +566,13 @@ def register():
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
-        name = request.form.get("name")
-        email = request.form.get("email")
+        name = (request.form.get("name") or "").strip()
+        email = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password")
-        existing = User.query.filter_by(email=email).first()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            flash(get_text("invalid_credentials"), "danger")
+            return render_template("register.html"), 400
+        existing = User.query.filter(db.func.lower(User.email) == email).first()
         if existing:
             flash(get_text("email_registered"), "warning")
         else:
@@ -557,20 +590,35 @@ def register():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
-        user = User.query.filter_by(email=email).first()
+        try:
+            validate_csrf(request.form.get("csrf_token", ""))
+        except ValidationError:
+            flash(get_text("invalid_credentials"), "danger")
+            return render_template("login.html", csrf_token=generate_csrf()), 400
+
+        email = (request.form.get("email") or "").strip().lower()
+        password = request.form.get("password") or ""
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            flash(get_text("invalid_credentials"), "danger")
+            return render_template("login.html", csrf_token=generate_csrf()), 400
+
+        user = User.query.filter(db.func.lower(User.email) == email).first()
         if user and check_password(password, user.password_hash):
-            login_user(user)
+            if user.password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+                user.password_hash = hash_password(password)
+                db.session.commit()
+            session.clear()
+            login_user(user, remember=request.form.get("remember") == "on")
             return redirect(url_for("dashboard"))
         flash(get_text("invalid_credentials"), "danger")
 
-    return render_template("login.html")
+    return render_template("login.html", csrf_token=generate_csrf())
 
 
 @app.route("/logout")

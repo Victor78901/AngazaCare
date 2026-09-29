@@ -28,6 +28,12 @@ git push -u origin main
 5. Add Environment Variables in the "Environment" tab:
    - `GEMINI_API_KEY`: Your Gemini API key (from .env)
    - `USE_FALLBACK_ONLY`: `false`
+   - `APP_ENV`: `production`
+   - `SECRET_KEY`: A unique, stable random secret; generate one with `python -c "import secrets; print(secrets.token_hex(32))"`
+   - `SESSION_COOKIE_SECURE`: `true`
+   - `RATELIMIT_STORAGE_URI`: A private Redis connection URL shared by all app instances
+
+   Do not use the in-memory rate-limit store in production. The app refuses to start in production if the secret key or shared rate-limit store is missing.
 
 6. Click **"Create Web Service"**
 

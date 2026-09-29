@@ -254,6 +254,28 @@ nav .nav-links a.active {
     box-shadow: 0 0 0 3px rgba(100, 255, 218, 0.15);
 }
 
+.login-options {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 1.2rem;
+    color: #ffffff;
+}
+
+.login-options input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #64ffda;
+}
+
+.login-options input:focus-visible,
+.btn:focus-visible,
+a:focus-visible {
+    outline: 3px solid #64ffda;
+    outline-offset: 3px;
+}
+
 input[type="radio"] {
     margin-right: 0.6rem;
     accent-color: #64ffda;

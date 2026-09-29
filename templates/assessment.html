@@ -11,7 +11,7 @@
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
                     {% for value, label in [(0, t.get('not_at_all', 'Not at all')), (1, t.get('several_days', 'Several days')), (2, t.get('more_than_half', 'More than half the days')), (3, t.get('nearly_every_day', 'Nearly every day'))] %}
                         <label class="assessment-option">
-                            <input type="radio" name="{{ qname }}" value="{{ value }}" {% if value == 0 %}checked{% endif %} />
+                            <input type="radio" name="{{ qname }}" value="{{ value }}" />
                             <span class="assessment-option-title">{{ value }} — {{ label }}</span>
                         </label>
                     {% endfor %}

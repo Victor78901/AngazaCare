@@ -7,3 +7,5 @@ flask-login
 bcrypt
 flask-sqlalchemy
 psycopg2-binary
+Flask-Limiter[redis]
+Flask-WTF
