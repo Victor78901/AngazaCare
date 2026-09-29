@@ -59,9 +59,21 @@ elif genai is not None and USE_FALLBACK_ONLY:
     print("Gemini is disabled because USE_FALLBACK_ONLY is enabled")
 
 print("Creating Flask app...")
-app = Flask(__name__)
-app.config["SECRET_KEY"] = "angazacare_secret_key_2026"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
+if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+    instance_path = "/tmp/instance"
+    os.makedirs(instance_path, exist_ok=True)
+    app = Flask(__name__, instance_path=instance_path)
+else:
+    app = Flask(__name__)
+    os.makedirs(app.instance_path, exist_ok=True)
+
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "angazacare_secret_key_2026")
+database_url = os.getenv("DATABASE_URL", "sqlite:///angazacare.db")
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)

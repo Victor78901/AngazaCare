@@ -3,7 +3,7 @@ services:
     name: angazacare
     env: docker
     dockerfilePath: Dockerfile
-    branch: master
+    branch: main
     autoDeploy: true
     envVars:
       - key: USE_FALLBACK_ONLY

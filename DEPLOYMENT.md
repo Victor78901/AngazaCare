@@ -28,6 +28,7 @@ git push -u origin main
 5. Add Environment Variables in the "Environment" tab:
    - `GEMINI_API_KEY`: Your Gemini API key (from .env)
    - `USE_FALLBACK_ONLY`: `false`
+   - `DATABASE_URL`: A persistent PostgreSQL connection string for deployed user accounts
 
 6. Click **"Create Web Service"**
 
