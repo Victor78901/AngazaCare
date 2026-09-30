@@ -32,7 +32,12 @@
     </div>
     <div class="card" style="margin-top: 1.5rem;">
         <h3>{{ t.get('weekly_mood_chart', 'Weekly mood chart') }}</h3>
+        {% if has_chart_data %}
         <canvas id="dashboardChart" height="120"></canvas>
+        {% if chart_entry_count == 1 %}<p>{{ t.get('single_chart_entry', 'One check-in is shown. Add another to see a trend line.') }}</p>{% endif %}
+        {% else %}
+        <p>{{ t.get('no_chart_data', 'No mood check-ins yet. Add one in Mood Tracker to see your trend.') }} <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') }}</a></p>
+        {% endif %}
     </div>
     <div class="grid cards-4" style="margin-top: 1.5rem;">
         <div class="card small-card">
@@ -54,10 +59,11 @@
     </div>
 </section>
 
+{% if has_chart_data %}
 <script>
-const labels = {{ chart_labels | safe }};
-const moodData = {{ mood_chart | safe }};
-const stressData = {{ stress_chart | safe }};
+const labels = {{ chart_labels | tojson }};
+const moodData = {{ mood_chart | tojson }};
+const stressData = {{ stress_chart | tojson }};
 const ctx = document.getElementById('dashboardChart').getContext('2d');
 new Chart(ctx, {
     type: 'line',
@@ -67,6 +73,12 @@ new Chart(ctx, {
             {
                 label: 'Mood',
                 data: moodData,
+                yAxisID: 'mood',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#1a5f7a',
+                pointBorderColor: '#f3f7fa',
+                pointBorderWidth: 2,
                 borderColor: '#1a5f7a',
                 backgroundColor: 'rgba(26, 95, 122, 0.12)',
                 tension: 0.35,
@@ -75,6 +87,12 @@ new Chart(ctx, {
             {
                 label: 'Stress',
                 data: stressData,
+                yAxisID: 'stress',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#f4d35e',
+                pointBorderColor: '#f3f7fa',
+                pointBorderWidth: 2,
                 borderColor: '#f4d35e',
                 backgroundColor: 'rgba(244, 211, 94, 0.16)',
                 tension: 0.35,
@@ -85,8 +103,12 @@ new Chart(ctx, {
     options: {
         responsive: true,
         plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: true, max: 10 } },
+        scales: {
+            mood: { type: 'linear', position: 'left', min: 1, max: 5, title: { display: true, text: 'Mood (1-5)' } },
+            stress: { type: 'linear', position: 'right', min: 1, max: 10, grid: { drawOnChartArea: false }, title: { display: true, text: 'Stress (1-10)' } },
+        },
     },
 });
 </script>
+{% endif %}
 {% endblock %}

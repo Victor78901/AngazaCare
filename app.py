@@ -401,15 +401,17 @@ def get_mood_chart_data(user):
     labels = []
     mood_values = []
     stress_values = []
+    has_recent_entries = False
     for offset in reversed(range(7)):
         day = today - timedelta(days=offset)
         labels.append(day.strftime("%b %d"))
         entry = MoodEntry.query.filter_by(user_id=user.id, date=day).first()
-        mood_values.append(entry.mood_score if entry else 0)
-        stress_values.append(entry.stress_level if entry else 0)
+        has_recent_entries = has_recent_entries or entry is not None
+        mood_values.append(entry.mood_score if entry else None)
+        stress_values.append(entry.stress_level if entry else None)
 
     # If the last 7 days contain no actual records, fall back to the most recent available entries.
-    if any(value != 0 for value in mood_values) or any(value != 0 for value in stress_values):
+    if has_recent_entries:
         return labels, mood_values, stress_values
 
     recent_entries = (
@@ -793,9 +795,11 @@ def dashboard():
         last_assessment=last_assessment,
         today_entry=today_entry,
         streak=streak,
-        chart_labels=json.dumps(labels),
-        mood_chart=json.dumps(mood_data),
-        stress_chart=json.dumps(stress_data),
+        chart_labels=labels,
+        mood_chart=mood_data,
+        stress_chart=stress_data,
+        has_chart_data=any(value is not None for value in mood_data),
+        chart_entry_count=sum(value is not None for value in mood_data),
         crisis_detected=crisis_detected,
         current_lang=get_language(),
         t=TRANSLATIONS[get_language()],
@@ -851,11 +855,14 @@ def assessment():
         
         radar_data = {
             "labels": list(domains.keys()),
-            "values": list(domains.values()),
+            "values": [
+                round(domains[domain] / (len(indices) * 3) * 100, 1)
+                for domain, indices in domain_map
+            ],
         }
     
     questions = PHQ9_QUESTIONS_SW if get_language() == "sw" else PHQ9_QUESTIONS
-    return render_template("assessment.html", questions=questions, result=result, radar_data=json.dumps(radar_data) if radar_data else None)
+    return render_template("assessment.html", questions=questions, result=result, radar_data=radar_data)
 
 
 @app.route("/mood_tracker", methods=["GET", "POST"])
@@ -887,25 +894,94 @@ def mood_tracker():
     return render_template(
         "mood_tracker.html",
         today_entry=today_entry,
-        chart_labels=json.dumps(labels),
-        mood_chart=json.dumps(mood_data),
-        stress_chart=json.dumps(stress_data),
+        chart_labels=labels,
+        mood_chart=mood_data,
+        stress_chart=stress_data,
+        has_chart_data=any(value is not None for value in mood_data),
+        chart_entry_count=sum(value is not None for value in mood_data),
     )
 
 
 @app.route("/recommendations")
 @login_required
 def recommendations():
-    last_assessment = Assessment.query.filter_by(user_id=current_user.id).order_by(Assessment.created_at.desc()).first()
-    if last_assessment:
-        recommendation = Recommendation.query.filter(
-            Recommendation.score_range_min <= last_assessment.score,
-            Recommendation.score_range_max >= last_assessment.score,
-        ).first()
-        tips = json.loads(recommendation.tips) if recommendation else []
-    else:
-        tips = []
-    return render_template("recommendations.html", tips=tips, assessment=last_assessment)
+    last_assessment = (
+        Assessment.query.filter_by(user_id=current_user.id)
+        .order_by(Assessment.created_at.desc(), Assessment.id.desc())
+        .first()
+    )
+    answers = last_assessment.answers if last_assessment else []
+    if not isinstance(answers, list):
+        answers = []
+    answers = [
+        answer if isinstance(answer, int) and not isinstance(answer, bool) and 0 <= answer <= 3 else 0
+        for answer in answers[:10]
+    ]
+
+    language = get_language()
+    recommendation_text = {
+        "en": {
+            "interest": "Schedule one enjoyable activity today, even for ten minutes.",
+            "mood": "Tell someone you trust how you feel; consider speaking with a counselor.",
+            "sleep": "Keep a regular wake-up time and wind down quietly before bed.",
+            "energy": "Start one task with a five-minute step, then take a break.",
+            "appetite": "Try regular meals and water; seek care if eating changes persist.",
+            "self_worth": "Challenge one self-critical thought with what you would tell a friend.",
+            "concentration": "Focus on one task for a short timed block, then take a break.",
+            "restlessness": "Pause for a calming breath and tell someone you trust how you feel.",
+            "impact": "Consider speaking with a mental-health or primary-care professional.",
+            "urgent": "Tell someone you trust and contact a mental-health professional now. If you are in immediate danger, call emergency services; in Kenya, call 999 or 112.",
+            "steady": "Keep supportive routines and stay connected with people you trust.",
+        },
+        "sw": {
+            "interest": "Panga shughuli moja unayoifurahia leo, hata kwa dakika kumi.",
+            "mood": "Mwambie mtu unayemwamini jinsi unavyojisikia.",
+            "sleep": "Amka kwa wakati unaofanana kila siku na tulia kabla ya kulala.",
+            "energy": "Anza kazi moja kwa hatua ya dakika tano, kisha pumzika.",
+            "appetite": "Jaribu kula milo ya kawaida na kunywa maji; tafuta msaada ikiwa mabadiliko yanaendelea.",
+            "self_worth": "Jibu wazo moja la kujikosoa kwa huruma unayompa rafiki.",
+            "concentration": "Fanya kazi moja kwa muda mfupi uliopanga, kisha pumzika.",
+            "restlessness": "Vuta pumzi ya kutuliza na mwambie mtu unayemwamini jinsi unavyojisikia.",
+            "impact": "Fikiria kuzungumza na mtaalamu wa afya ya akili au mhudumu wa afya.",
+            "urgent": "Mwambie mtu unayemwamini na uwasiliane na mtaalamu wa afya ya akili sasa. Ukiwa hatarini, piga huduma za dharura; nchini Kenya piga 999 au 112.",
+            "steady": "Endelea na mazoea yanayokusaidia na wasiliana na watu unaowaamini.",
+        },
+    }.get(language, {})
+
+    answer_topics = {
+        0: "interest",
+        1: "mood",
+        2: "sleep",
+        3: "energy",
+        4: "appetite",
+        5: "self_worth",
+        6: "concentration",
+        7: "restlessness",
+        9: "impact",
+    }
+    scored_topics = sorted(
+        ((index, answer) for index, answer in enumerate(answers) if answer > 0 and index in answer_topics),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    personalized_tips = [
+        recommendation_text[answer_topics[index]]
+        for index, _ in scored_topics[:3]
+        if answer_topics[index] in recommendation_text
+    ]
+    urgent_recommendation = bool(len(answers) > 8 and answers[8] > 0)
+    if urgent_recommendation:
+        personalized_tips.insert(0, recommendation_text["urgent"])
+        personalized_tips = personalized_tips[:3]
+    if not personalized_tips and answers:
+        personalized_tips = [recommendation_text["steady"]]
+
+    return render_template(
+        "recommendations.html",
+        assessment=last_assessment,
+        personalized_tips=personalized_tips,
+        t=TRANSLATIONS.get(language, TRANSLATIONS["en"]),
+    )
 
 
 @app.route("/api/geocode", methods=["POST"])
@@ -1012,6 +1088,14 @@ TRANSLATIONS = {
         "mood_label": "mood",
         "stress_label": "stress",
         "weekly_mood_chart": "Weekly mood chart",
+        "no_chart_data": "No mood check-ins yet. Add one in Mood Tracker to see your trend.",
+        "single_chart_entry": "One check-in is shown. Add another to see a trend line.",
+        "personalized_recommendations": "Recommendations based on your assessment",
+        "based_on_latest_assessment": "Based on your latest assessment responses:",
+        "recommendation_disclaimer": "These supportive suggestions are not a diagnosis or a substitute for professional care.",
+        "priority_support": "Priority support",
+        "kenya_emergency_numbers": "In Kenya, call 999 or 112 for immediate emergency help.",
+        "no_personalized_recommendations": "Complete an assessment to get recommendations based on your answers.",
         "check_mental_health": "Check in with a quick mental health survey.",
         "share_mood": "Share your mood, stress, and reflections.",
         "get_support_tips": "Get support tips based on your latest score.",
@@ -1069,6 +1153,14 @@ TRANSLATIONS = {
         "mood_label": "hali ya jini",
         "stress_label": "msongo wa mawazo",
         "weekly_mood_chart": "Chati ya hali ya jini ya kila wiki",
+        "no_chart_data": "Bado hakuna taarifa za hali yako. Rekodi hali yako ili kuona mwenendo.",
+        "single_chart_entry": "Taarifa moja inaonyeshwa. Rekodi nyingine ili kuona mstari wa mwenendo.",
+        "personalized_recommendations": "Mapendekezo kulingana na tathmini yako",
+        "based_on_latest_assessment": "Kulingana na majibu yako ya tathmini ya hivi karibuni:",
+        "recommendation_disclaimer": "Mapendekezo haya ni ya kukusaidia tu; si utambuzi wa ugonjwa wala mbadala wa huduma ya mtaalamu.",
+        "priority_support": "Msaada wa kipaumbele",
+        "kenya_emergency_numbers": "Nchini Kenya, piga 999 au 112 kwa msaada wa dharura wa haraka.",
+        "no_personalized_recommendations": "Kamilisha tathmini ili kupata mapendekezo kulingana na majibu yako.",
         "check_mental_health": "Jaribu tathmini ya haraka ya afya ya akili.",
         "share_mood": "Shiriki hali yako, msongo wa mawazo, na mawazo yako.",
         "get_support_tips": "Pata vidokezo vya msaada kulingana na alama yako ya mwisho.",

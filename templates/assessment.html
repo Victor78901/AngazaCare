@@ -25,6 +25,31 @@
             <h3>{{ result.label }} score: {{ result.score }}</h3>
             <p>{{ result.message }}</p>
         </div>
+        <div class="chart-container">
+            <canvas id="assessmentChart" aria-label="Assessment domain scores" role="img"></canvas>
+        </div>
     {% endif %}
 </div>
+{% if radar_data %}
+<script>
+const assessmentData = {{ radar_data | tojson }};
+new Chart(document.getElementById('assessmentChart'), {
+    type: 'radar',
+    data: {
+        labels: assessmentData.labels,
+        datasets: [{
+            label: 'Domain score (%)',
+            data: assessmentData.values,
+            borderColor: '#1a5f7a',
+            backgroundColor: 'rgba(26, 95, 122, 0.2)',
+            pointBackgroundColor: '#1a5f7a',
+        }],
+    },
+    options: {
+        responsive: true,
+        scales: { r: { beginAtZero: true, min: 0, max: 100 } },
+    },
+});
+</script>
+{% endif %}
 {% endblock %}

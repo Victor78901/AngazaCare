@@ -2,6 +2,11 @@
 {% block content %}
 <style>
     .hospital-finder { max-width: 900px; margin: 2rem auto; }
+    .personal-recommendations { max-width: 900px; margin: 2rem auto 0; }
+    .recommendation-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0.75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+    .recommendation-tab { min-height: 100%; padding: 1rem; border: 1px solid rgba(131,240,214,0.28); border-top: 3px solid #3fa8a3; border-radius: 6px; background: rgba(255,255,255,0.035); color: #d9e4ee; transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease; }
+    .recommendation-tab:hover, .recommendation-tab:focus-visible { border-color: #83f0d6; background: rgba(63,168,163,0.12); transform: translateY(-2px); outline: none; }
+    @media (prefers-reduced-motion: reduce) { .recommendation-tab { transition: none; } }
     .hospital-search { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0; }
     .hospital-search input { flex: 1 1 240px; min-width: 0; padding: 0.8rem; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; background: #0b1120; color: #edf2fb; }
     .hospital-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; }
@@ -19,6 +24,20 @@
     @keyframes hospital-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .hospital-status[aria-busy="true"]::before { animation-duration: 2s; } }
 </style>
+<section class="card personal-recommendations" aria-labelledby="personal-recommendations-title">
+    <h2 id="personal-recommendations-title">{{ t.get('personalized_recommendations', 'Recommendations based on your assessment') }}</h2>
+    {% if assessment %}
+        <p>{{ t.get('based_on_latest_assessment', 'Based on your latest assessment responses:') }}</p>
+        <p>{{ t.get('recommendation_disclaimer', 'These supportive suggestions are not a diagnosis or a substitute for professional care.') }}</p>
+        {% if personalized_tips %}
+        <ul class="recommendation-tabs">
+            {% for tip in personalized_tips %}<li class="recommendation-tab" tabindex="0">{{ tip }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+    {% else %}
+        <p>{{ t.get('no_personalized_recommendations', 'Complete an assessment to get recommendations based on your answers.') }} <a href="/assessment">{{ t.get('assessment', 'Assessment') }}</a></p>
+    {% endif %}
+</section>
 <section class="card hospital-finder" aria-labelledby="hospital-finder-title">
     <h2 id="hospital-finder-title">Hospital Recommendation</h2>
     <p>Find nearby hospitals and clinics, or search by town or city.</p>
