@@ -45,13 +45,17 @@ if genai is not None and not USE_FALLBACK_ONLY:
     except Exception:
         genai = None
 
-is_vercel = bool(os.environ.get("VERCEL"))
-if is_vercel:
+IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+if IS_VERCEL:
     app = Flask(__name__, instance_path="/tmp/instance", static_folder=None)
+    try:
+        os.makedirs("/tmp/instance", exist_ok=True)
+    except OSError as error:
+        app.logger.warning("Could not create Vercel instance directory: %s", error)
 else:
     app = Flask(__name__, static_folder="public/static", static_url_path="/static")
 
-app_env = os.getenv("APP_ENV", "production" if is_vercel else "development").lower()
+app_env = os.getenv("APP_ENV", "production" if IS_VERCEL else "development").lower()
 secret_key = os.getenv("SECRET_KEY")
 if not secret_key:
     secret_key = secrets.token_hex(32)
@@ -76,11 +80,11 @@ if database_url:
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 else:
-    if is_vercel:
-        database_url = "sqlite:////tmp/instance/angazacare.db"
+    if IS_VERCEL:
+        database_url = "sqlite:////tmp/mindwell.db"
         app.logger.warning(
             "DATABASE_URL is not set on Vercel; using temporary SQLite storage "
-            "at /tmp/instance/angazacare.db. Data will not persist."
+            "at /tmp/mindwell.db. Data will not persist."
         )
     else:
         database_url = "sqlite:///angazacare.db"
