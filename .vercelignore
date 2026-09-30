@@ -1,0 +1,11 @@
+.venv/
+instance/
+__pycache__/
+.env
+*.db
+cert.pem
+key.pem
+add_assignment.py
+check_chat_db.py
+temp_*.py
+test_*.py

@@ -1,6 +1,21 @@
 # Deployment Guide for AngazaCare
 
-## Quick Deployment to Render.com (Recommended)
+## Deploy to Vercel
+
+Vercel detects the Flask application in the root `app.py`. Connect the GitHub repository to Vercel and deploy from the project root; no custom build command is required. Static assets are served from `public/`.
+
+Set these environment variables in both Preview and Production:
+- `SECRET_KEY`: a stable random secret, unique per environment
+- `DATABASE_URL`: a persistent PostgreSQL connection string
+- `SESSION_COOKIE_SECURE`: `true`
+- `RATELIMIT_STORAGE_URI`: optional shared Redis URI; without it, rate limits are per function instance
+- `GEMINI_API_KEY`: optional, required for Gemini-backed features
+
+Vercel sets `VERCEL` automatically. If `DATABASE_URL` is omitted, the app uses SQLite under `/tmp`; that storage is temporary and must not be used for persistent user data. Initialize the PostgreSQL schema before sending traffic; database creation is intentionally not run during serverless imports.
+
+For local Vercel-compatible development, install dependencies and run `vercel dev` from the repository root.
+
+## Deploy to Render.com
 
 ### Step 1: Prepare Your Repository
 ```bash
@@ -33,7 +48,7 @@ git push -u origin main
    - `SESSION_COOKIE_SECURE`: `true`
    - `RATELIMIT_STORAGE_URI`: A private Redis connection URL shared by all app instances
 
-   Do not use the in-memory rate-limit store in production. The app refuses to start in production if the secret key or shared rate-limit store is missing.
+   Configure a shared rate-limit store for multi-instance production deployments; otherwise, rate limits are stored in process memory.
 
 6. Click **"Create Web Service"**
 

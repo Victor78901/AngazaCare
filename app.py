@@ -45,15 +45,25 @@ if genai is not None and not USE_FALLBACK_ONLY:
     except Exception:
         genai = None
 
-app = Flask(__name__)
-app_env = os.getenv("APP_ENV", "development").lower()
+is_vercel = bool(os.environ.get("VERCEL"))
+if is_vercel:
+    app = Flask(__name__, instance_path="/tmp/instance", static_folder=None)
+else:
+    app = Flask(__name__, static_folder="public/static", static_url_path="/static")
+
+app_env = os.getenv("APP_ENV", "production" if is_vercel else "development").lower()
 secret_key = os.getenv("SECRET_KEY")
-if not secret_key and app_env == "production":
-    raise RuntimeError("SECRET_KEY must be configured in production")
+if not secret_key:
+    secret_key = secrets.token_hex(32)
+    app.logger.warning(
+        "SECRET_KEY is not set; using a temporary key. Configure SECRET_KEY "
+        "to keep sessions valid across serverless invocations."
+    )
 session_cookie_secure = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
 if app_env == "production" and not session_cookie_secure:
-    raise RuntimeError("SESSION_COOKIE_SECURE must be enabled in production")
-app.config["SECRET_KEY"] = secret_key or secrets.token_hex(32)
+    app.logger.warning("SESSION_COOKIE_SECURE=false is ignored in production.")
+    session_cookie_secure = True
+app.config["SECRET_KEY"] = secret_key
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = session_cookie_secure
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -61,13 +71,24 @@ app.config["REMEMBER_COOKIE_HTTPONLY"] = True
 app.config["REMEMBER_COOKIE_SECURE"] = app.config["SESSION_COOKIE_SECURE"]
 app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///angazacare.db"
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+else:
+    if is_vercel:
+        database_url = "sqlite:////tmp/instance/angazacare.db"
+        app.logger.warning(
+            "DATABASE_URL is not set on Vercel; using temporary SQLite storage "
+            "at /tmp/instance/angazacare.db. Data will not persist."
+        )
+    else:
+        database_url = "sqlite:///angazacare.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 rate_limit_storage_uri = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
-if app_env == "production" and rate_limit_storage_uri.startswith("memory://"):
-    raise RuntimeError("RATELIMIT_STORAGE_URI must use shared storage in production")
 limiter = Limiter(
     get_remote_address,
     app=app,

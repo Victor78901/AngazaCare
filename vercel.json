@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app.py": {
+      "excludeFiles": "{.venv/**,instance/**,**/__pycache__/**,**/*.db,.env,cert.pem,key.pem,add_assignment.py,check_chat_db.py,temp_*.py,test_*.py}"
+    }
+  }
+}
