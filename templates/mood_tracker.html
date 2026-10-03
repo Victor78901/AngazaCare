@@ -5,15 +5,20 @@
 {% endif %}
 <div class="card" style="max-width: 880px; margin: 2rem auto;">
     <h2>{{ t.get('mood_tracker_title', 'Daily Mood Tracker') }}</h2>
+    <p>{{ t.get('note_placeholder', 'How are you feeling today?') }}</p>
     <form method="POST">
-        <div class="form-field">
-            <label for="mood_score">{{ t.get('mood_score', 'Mood Score') }}</label>
-            <select name="mood_score" id="mood_score" required>
-                {% for value, label in [(1,'😔 1'),(2,'😐 2'),(3,'🙂 3'),(4,'😊 4'),(5,'😄 5')] %}
-                    <option value="{{ value }}" {% if today_entry and today_entry.mood_score == value %}selected{% endif %}>{{ label }}</option>
+        <button class="btn" type="submit">{{ t.get('save_mood', 'Save Mood') }}</button>
+        <fieldset class="form-field assessment-field">
+            <legend class="assessment-question">{{ t.get('mood_score', 'How is your mood?') }}</legend>
+            <div class="assessment-options">
+                {% for value, label in [(1,'😢 Very low'),(2,'🙁 Low'),(3,'😐 Okay'),(4,'🙂 Good'),(5,'😊 Great')] %}
+                    <label class="assessment-option">
+                        <input type="radio" name="mood_score" value="{{ value }}" required {% if today_entry and today_entry.mood_score == value %}checked{% endif %} />
+                        <span class="assessment-option-title">{{ label }}</span>
+                    </label>
                 {% endfor %}
-            </select>
-        </div>
+            </div>
+        </fieldset>
         <div class="form-field">
             <label for="stress_level">{{ t.get('stress_level', 'Stress level') }} <span id="stressValue"></span></label>
             <input type="range" name="stress_level" id="stress_level" min="1" max="10" value="{{ today_entry.stress_level if today_entry else 5 }}" />
@@ -22,70 +27,6 @@
             <label for="note">{{ t.get('journal_note', 'Journal note (optional)') }}</label>
             <textarea name="note" id="note" placeholder="{{ t.get('note_placeholder', 'How are you feeling today?') }}">{% if today_entry %}{{ today_entry.note }}{% endif %}</textarea>
         </div>
-        <button class="btn" type="submit">{{ t.get('save_mood', 'Save Mood') }}</button>
     </form>
 </div>
-
-<div class="card" style="max-width: 900px; margin: 2rem auto;">
-    <h3>{{ t.get('weekly_trend', 'Weekly trend') }}</h3>
-    {% if has_chart_data %}
-    <canvas id="moodChart" height="110"></canvas>
-    {% if chart_entry_count == 1 %}<p>{{ t.get('single_chart_entry', 'One check-in is shown. Add another to see a trend line.') }}</p>{% endif %}
-    {% else %}
-    <p>{{ t.get('no_chart_data', 'No mood check-ins yet. Add one in Mood Tracker to see your trend.') }}</p>
-    {% endif %}
-</div>
-
-{% if has_chart_data %}
-<script>
-const labels = {{ chart_labels | tojson }};
-const moodData = {{ mood_chart | tojson }};
-const stressData = {{ stress_chart | tojson }};
-const ctx = document.getElementById('moodChart').getContext('2d');
-new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: labels,
-        datasets: [
-            {
-                label: {{ t.get('mood_label', 'Mood')|title|tojson }},
-                data: moodData,
-                yAxisID: 'mood',
-                pointRadius: 5,
-                pointHoverRadius: 7,
-                pointBackgroundColor: '#86a98f',
-                pointBorderColor: '#1e293b',
-                pointBorderWidth: 2,
-                borderColor: '#86a98f',
-                backgroundColor: 'rgba(134, 169, 143, 0.16)',
-                tension: 0.3,
-                fill: true,
-            },
-            {
-                label: {{ t.get('stress_label', 'Stress')|title|tojson }},
-                data: stressData,
-                yAxisID: 'stress',
-                pointRadius: 5,
-                pointHoverRadius: 7,
-                pointBackgroundColor: '#6ee7b7',
-                pointBorderColor: '#1e293b',
-                pointBorderWidth: 2,
-                borderColor: '#6ee7b7',
-                backgroundColor: 'rgba(110, 231, 183, 0.12)',
-                tension: 0.3,
-                fill: true,
-            },
-        ],
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'top', labels: { color: '#cbd5e1' } } },
-        scales: {
-            mood: { type: 'linear', position: 'left', min: 1, max: 5, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.12)' }, title: { display: true, text: {{ t.get('mood_axis_label')|tojson }}, color: '#cbd5e1' } },
-            stress: { type: 'linear', position: 'right', min: 1, max: 10, ticks: { color: '#94a3b8' }, grid: { drawOnChartArea: false }, title: { display: true, text: {{ t.get('stress_axis_label')|tojson }}, color: '#cbd5e1' } },
-        },
-    },
-});
-</script>
-{% endif %}
 {% endblock %}

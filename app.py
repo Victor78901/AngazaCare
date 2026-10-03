@@ -1413,15 +1413,9 @@ def mood_tracker():
         flash(get_text("today_mood_recorded"), "success")
         return redirect(url_for("mood_tracker", saved=1))
 
-    labels, mood_data, stress_data = get_mood_chart_data(current_user)
     return render_template(
         "mood_tracker.html",
         today_entry=today_entry,
-        chart_labels=labels,
-        mood_chart=mood_data,
-        stress_chart=stress_data,
-        has_chart_data=any(value is not None for value in mood_data),
-        chart_entry_count=sum(value is not None for value in mood_data),
     )
 
 
@@ -1510,7 +1504,7 @@ def recommendations():
         9: "impact",
     }
     scored_topics = sorted(
-        ((index, answer) for index, answer in enumerate(answers) if answer > 0 and index in answer_topics),
+        ((index, answers[index] if index < len(answers) else 0) for index in answer_topics),
         key=lambda item: item[1],
         reverse=True,
     )
