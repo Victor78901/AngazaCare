@@ -9,16 +9,16 @@
     <div class="technique-selector">
       <label for="technique">{{ t.get('choose_technique', 'Choose a technique:') }}</label>
       <select id="technique" onchange="selectTechnique(this.value)">
-        <option value="box">Box Breathing (4-4-4-4)</option>
-        <option value="478">4-7-8 Breathing</option>
-        <option value="deep">Deep Breathing (4-2-6)</option>
+        <option value="box">{{ t.get('box_breathing', 'Box Breathing (4-4-4-4)') }}</option>
+        <option value="478">{{ t.get('four_seven_eight_breathing', '4-7-8 Breathing') }}</option>
+        <option value="deep">{{ t.get('deep_breathing', 'Deep Breathing (4-2-6)') }}</option>
       </select>
       <p class="technique-description" id="techDescription">{{ t.get('box_description', 'Box breathing helps calm your nervous system by creating a steady rhythm.') }}</p>
     </div>
 
     <div class="breathing-animation">
       <div class="breathing-circle" id="breathingCircle">
-        <p class="phase-label" id="phaseLabel">Breathe In</p>
+        <p class="phase-label" id="phaseLabel">{{ t.get('breathe_in', 'Breathe In') }}</p>
       </div>
       <p class="session-timer" id="sessionTimer">00:00</p>
     </div>
@@ -31,7 +31,7 @@
     </div>
 
     <div class="duration-selector">
-      <label for="duration">Session duration (minutes):</label>
+      <label for="duration">{{ t.get('session_duration', 'Session duration (minutes):') }}</label>
       <input type="number" id="duration" value="5" min="1" max="30" />
     </div>
 
@@ -57,9 +57,15 @@
 
 <script>
 const TECHNIQUES = {
-  box: { inhale: 4, hold: 4, exhale: 4, name: "Box Breathing" },
-  "478": { inhale: 4, hold: 7, exhale: 8, name: "4-7-8 Breathing" },
-  deep: { inhale: 4, hold: 2, exhale: 6, name: "Deep Breathing" }
+  box: { inhale: 4, hold: 4, exhale: 4, name: {{ t.get('box_breathing', 'Box Breathing')|tojson }} },
+  "478": { inhale: 4, hold: 7, exhale: 8, name: {{ t.get('four_seven_eight_breathing', '4-7-8 Breathing')|tojson }} },
+  deep: { inhale: 4, hold: 2, exhale: 6, name: {{ t.get('deep_breathing', 'Deep Breathing')|tojson }} }
+};
+
+const PHASE_LABELS = {
+  inhale: {{ t.get('breathe_in', 'Breathe In')|tojson }},
+  hold: {{ t.get('breathe_hold', 'Hold')|tojson }},
+  exhale: {{ t.get('breathe_out', 'Breathe Out')|tojson }},
 };
 
 const DESCRIPTIONS = {
@@ -130,7 +136,7 @@ function resetBreathing() {
   clearInterval(timerInterval);
   
   document.getElementById("sessionTimer").textContent = "00:00";
-  document.getElementById("phaseLabel").textContent = "Breathe In";
+  document.getElementById("phaseLabel").textContent = PHASE_LABELS.inhale;
   document.getElementById("startBtn").style.display = "inline-block";
   document.getElementById("pauseBtn").style.display = "none";
   document.getElementById("resumeBtn").style.display = "none";
@@ -168,9 +174,9 @@ function startTimer() {
 function animateBreathing() {
   const technique = TECHNIQUES[currentTechnique];
   const phases = [
-    { label: "Breathe In", duration: technique.inhale * 1000, className: "inhale" },
-    { label: "Hold", duration: technique.hold * 1000, className: "hold" },
-    { label: "Breathe Out", duration: technique.exhale * 1000, className: "exhale" }
+    { label: PHASE_LABELS.inhale, duration: technique.inhale * 1000, className: "inhale" },
+    { label: PHASE_LABELS.hold, duration: technique.hold * 1000, className: "hold" },
+    { label: PHASE_LABELS.exhale, duration: technique.exhale * 1000, className: "exhale" }
   ];
 
   function runPhases() {
@@ -209,21 +215,21 @@ function submitBreathingSession(event) {
   max-width: 600px;
   margin: 2rem auto;
   padding: 2rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-surface);
   backdrop-filter: blur(10px);
   border-radius: 16px;
   text-align: center;
-  color: #a8b2d8;
+  color: var(--color-muted);
 }
 
 .breathing-container h1 {
-  color: #64ffda;
+  color: var(--color-mint);
   margin-bottom: 0.5rem;
   font-size: 2rem;
 }
 
 .subtitle {
-  color: #7a8ba8;
+  color: var(--color-muted);
   margin-bottom: 2rem;
 }
 
@@ -242,20 +248,20 @@ function submitBreathingSession(event) {
 
 .technique-selector select {
   padding: 0.75rem;
-  background: rgba(100, 255, 218, 0.1);
-  border: 1px solid #64ffda;
-  color: #64ffda;
+  background: var(--color-mint-soft);
+  border: 1px solid var(--color-mint);
+  color: var(--color-mint);
   border-radius: 8px;
   font-size: 1rem;
   cursor: pointer;
 }
 
 .technique-selector select:hover {
-  background: rgba(100, 255, 218, 0.2);
+  background: rgba(110, 231, 183, 0.2);
 }
 
 .technique-description {
-  color: #7a8ba8;
+  color: var(--color-muted);
   font-size: 0.9rem;
   font-style: italic;
 }
@@ -271,13 +277,13 @@ function submitBreathingSession(event) {
   width: 200px;
   height: 200px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(100, 255, 218, 0.3), rgba(100, 255, 218, 0.05));
-  border: 2px solid #64ffda;
+  background: linear-gradient(135deg, rgba(110, 231, 183, 0.24), rgba(134, 169, 143, 0.08));
+  border: 2px solid var(--color-sage);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.2rem;
-  color: #64ffda;
+  color: var(--color-mint);
   font-weight: bold;
 }
 
@@ -318,22 +324,22 @@ function submitBreathingSession(event) {
 }
 
 @keyframes breathe-inhale {
-  0% { transform: scale(1); background: linear-gradient(135deg, rgba(100, 255, 218, 0.1), rgba(100, 255, 218, 0.05)); }
-  100% { transform: scale(1.3); background: linear-gradient(135deg, rgba(100, 255, 218, 0.4), rgba(100, 255, 218, 0.2)); }
+  0% { transform: scale(1); background: linear-gradient(135deg, rgba(110, 231, 183, 0.1), rgba(134, 169, 143, 0.06)); }
+  100% { transform: scale(1.3); background: linear-gradient(135deg, rgba(110, 231, 183, 0.34), rgba(134, 169, 143, 0.2)); }
 }
 
 @keyframes breathe-hold {
-  0%, 100% { transform: scale(1.3); background: linear-gradient(135deg, rgba(100, 255, 218, 0.4), rgba(100, 255, 218, 0.2)); }
+  0%, 100% { transform: scale(1.3); background: linear-gradient(135deg, rgba(110, 231, 183, 0.34), rgba(134, 169, 143, 0.2)); }
 }
 
 @keyframes breathe-exhale {
-  0% { transform: scale(1.3); background: linear-gradient(135deg, rgba(100, 255, 218, 0.4), rgba(100, 255, 218, 0.2)); }
-  100% { transform: scale(1); background: linear-gradient(135deg, rgba(100, 255, 218, 0.1), rgba(100, 255, 218, 0.05)); }
+  0% { transform: scale(1.3); background: linear-gradient(135deg, rgba(110, 231, 183, 0.34), rgba(134, 169, 143, 0.2)); }
+  100% { transform: scale(1); background: linear-gradient(135deg, rgba(110, 231, 183, 0.1), rgba(134, 169, 143, 0.06)); }
 }
 
 .session-timer {
   font-size: 2rem;
-  color: #64ffda;
+  color: var(--color-mint);
   font-weight: bold;
   font-family: monospace;
 }
@@ -356,33 +362,33 @@ function submitBreathingSession(event) {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #64ffda, #5ae5d0);
-  color: #0d1b2a;
+  background: linear-gradient(135deg, var(--color-sage), var(--color-mint));
+  color: var(--color-bg);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(100, 255, 218, 0.3);
+  box-shadow: 0 8px 16px rgba(110, 231, 183, 0.24);
 }
 
 .btn-secondary {
-  background: rgba(100, 255, 218, 0.2);
-  color: #64ffda;
-  border: 1px solid #64ffda;
+  background: var(--color-mint-soft);
+  color: var(--color-mint);
+  border: 1px solid var(--color-mint);
 }
 
 .btn-secondary:hover {
-  background: rgba(100, 255, 218, 0.3);
+  background: rgba(110, 231, 183, 0.22);
 }
 
 .btn-success {
-  background: linear-gradient(135deg, #5ae5d0, #3dd5c0);
-  color: #0d1b2a;
+  background: linear-gradient(135deg, var(--color-sage), var(--color-mint-strong));
+  color: var(--color-bg);
 }
 
 .btn-success:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(90, 229, 208, 0.3);
+  box-shadow: 0 8px 16px rgba(110, 231, 183, 0.24);
 }
 
 .duration-selector {
@@ -395,17 +401,17 @@ function submitBreathingSession(event) {
 .duration-selector input {
   width: 80px;
   padding: 0.5rem;
-  background: rgba(100, 255, 218, 0.1);
-  border: 1px solid #64ffda;
-  color: #64ffda;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
   border-radius: 8px;
   text-align: center;
   font-size: 1rem;
 }
 
 .breathing-tips {
-  background: rgba(100, 255, 218, 0.05);
-  border: 1px solid rgba(100, 255, 218, 0.2);
+  background: rgba(110, 231, 183, 0.06);
+  border: 1px solid rgba(110, 231, 183, 0.2);
   border-radius: 12px;
   padding: 1.5rem;
   text-align: left;
@@ -413,7 +419,7 @@ function submitBreathingSession(event) {
 }
 
 .breathing-tips h3 {
-  color: #64ffda;
+  color: var(--color-mint);
   margin-bottom: 1rem;
 }
 
@@ -423,7 +429,7 @@ function submitBreathingSession(event) {
 }
 
 .breathing-tips li {
-  color: #a8b2d8;
+  color: var(--color-muted);
   margin: 0.5rem 0;
   padding-left: 1.5rem;
   position: relative;
@@ -433,7 +439,7 @@ function submitBreathingSession(event) {
   content: "✓";
   position: absolute;
   left: 0;
-  color: #64ffda;
+  color: var(--color-mint);
   font-weight: bold;
 }
 

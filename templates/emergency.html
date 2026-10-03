@@ -1,16 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card" style="max-width: 960px; margin: 2rem auto; border-left: 6px solid #d62828;">
-    <h2 style="color: #d62828;">{{ t.get('emergency_support', 'Emergency Support') }}</h2>
+<div class="card" style="max-width: 960px; margin: 2rem auto; border-left: 6px solid var(--color-coral);">
+    <h2 style="color: var(--color-coral);">{{ t.get('emergency_support', 'Emergency Support') }}</h2>
     <p>{{ t.get('emergency_context', 'If you need immediate assistance, contact one of these resources right away.') }}</p>
     <div class="card-list" style="margin-top: 1rem;">
         {% for contact in contacts %}
             <div class="card contact-card">
                 <h3>{{ contact.name }}</h3>
-                <p><strong>{{ contact.role }}</strong></p>
-                <p>{{ t.get('phone', 'Phone') }}: <a href="tel:{{ contact.phone }}">{{ contact.phone }}</a></p>
-                <p>{{ t.get('email_label', 'Email') }}: <a href="mailto:{{ contact.email }}">{{ contact.email }}</a></p>
-                <p><a class="btn" href="tel:{{ contact.phone }}">{{ t.get('call_now', 'Call Now') }}</a></p>
+                <p><strong>{{ t.get(contact.description_key, contact.description) }}</strong></p>
+                <p>{{ t.get('phone', 'Phone') }}:
+                    {% for number in contact.number %}
+                        <a href="tel:{{ number | replace(' ', '') }}">{{ number }}</a>{% if not loop.last %} {{ t.get('or', 'or') }} {% endif %}
+                    {% endfor %}
+                </p>
+                <p>{{ t.get('available_hours', 'Available') }}: {{ t.get(contact.hours_key, contact.hours) }}</p>
+                {% if contact.whatsapp %}
+                    <p><a href="https://wa.me/{{ contact.whatsapp }}">WhatsApp: {{ contact.number[0] }}</a></p>
+                {% endif %}
             </div>
         {% endfor %}
     </div>

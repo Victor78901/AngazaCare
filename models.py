@@ -15,7 +15,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     mood_entries = db.relationship("MoodEntry", backref="user", lazy=True)
     assessments = db.relationship("Assessment", backref="user", lazy=True)
-    # Roles: 'patient' or 'psychiatrist'
+    # Roles: 'patient', 'psychiatrist', or 'admin'
     role = db.Column(db.String(32), nullable=False, default="patient")
     # Whether the patient has consented to clinician review of full records
     consent_to_clinician_review = db.Column(db.Boolean, default=False, nullable=False)
@@ -36,6 +36,15 @@ class User(UserMixin, db.Model):
 
     def get_id(self):
         return str(self.id)
+
+
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+
 
 class MoodEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -108,3 +117,14 @@ class ChatMessage(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     
     user = db.relationship("User", backref="chat_messages")
+
+
+class ChatInteraction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    session_hash = db.Column(db.String(64), nullable=True, index=True)
+    user_message = db.Column(db.Text, nullable=False)
+    ai_response = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = db.relationship("User", backref="chat_interactions")

@@ -6,7 +6,7 @@ python-dotenv
 werkzeug
 flask-login
 bcrypt
-flask-sqlalchemy
+flask-sqlalchemy>=3.1.1,<4
 psycopg2-binary
 Flask-Limiter[redis]
 Flask-WTF

@@ -1,29 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Admin Dashboard</h1>
-<p>Assigned patients list:</p>
+<h1>{{ t.get('admin_dashboard') }}</h1>
+<p>{{ t.get('assigned_patients_list') }}</p>
 <table class="table">
     <thead>
         <tr>
-            <th>Patient</th>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Consent</th>
-            <th>AI Summary</th>
-            <th>Actions</th>
+            <th>{{ t.get('patient') }}</th>
+            <th>{{ t.get('name') }}</th>
+            <th>{{ t.get('email') }}</th>
+            <th>{{ t.get('consent') }}</th>
+            <th>{{ t.get('ai_summary') }}</th>
+            <th>{{ t.get('actions') }}</th>
         </tr>
     </thead>
     <tbody>
         {% for p in patients %}
         <tr>
-            <td>Patient #{{ p.id }}</td>
+            <td>{{ t.get('patient') }} #{{ p.id }}</td>
             <td><span class="blurred-text">{{ p.masked_name }}</span></td>
             <td><span class="blurred-text">{{ p.masked_email }}</span></td>
-            <td>{{ 'Yes' if p.consent_to_clinician_review else 'No' }}</td>
-            <td>{{ p.ai_summary.response }}</td>
-            <td><a href="/admin/user/{{ p.id }}" class="btn">View</a></td>
+            <td>{{ t.get('yes') if p.consent_to_clinician_review else t.get('no') }}</td>
+            <td>
+                {% if p.ai_summary %}
+                    {{ p.ai_summary.response }}
+                {% else %}
+                    <span class="admin-privacy-note">{{ t.get('summary_withheld') }}</span>
+                {% endif %}
+            </td>
+            <td><a href="/admin/user/{{ p.id }}" class="btn">{{ t.get('view') }}</a></td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+{% include "_admin_activity.html" %}
 {% endblock %}

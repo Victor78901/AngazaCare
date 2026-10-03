@@ -9,35 +9,21 @@
     <div class="grid summary-grid" style="margin-top: 1.5rem;">
         <div class="card small-card">
             <h3>{{ t.get('last_assessment', 'Last assessment') }}</h3>
-            {% if last_assessment %}
-                <p><strong>{{ last_assessment.score }}</strong> — {{ last_assessment.severity }}</p>
-                <p>{{ last_assessment.created_at.strftime('%b %d, %Y') }}</p>
-            {% else %}
-                <p>{{ t.get('no_assessment', 'No assessment yet.') }}</p>
-            {% endif %}
+            <p id="dashboard-assessment" data-empty-text="{{ t.get('no_assessment', 'No assessment yet.') }}" aria-live="polite">{{ t.get('no_assessment', 'No assessment yet.') }}</p>
         </div>
         <div class="card small-card">
             <h3>{{ t.get('todays_mood', "Today's mood") }}</h3>
-            {% if today_entry %}
-                <p><strong>{{ today_entry.mood_score }}/5</strong> {{ t.get('mood_label', 'mood') }}</p>
-                <p><strong>{{ today_entry.stress_level }}/10</strong> {{ t.get('stress_label', 'stress') }}</p>
-            {% else %}
-                <p>{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
-            {% endif %}
+            <p id="dashboard-mood" data-empty-text="{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}" data-mood-label="{{ t.get('mood_label', 'mood') }}" data-stress-label="{{ t.get('stress_label', 'stress') }}" aria-live="polite">{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
         </div>
         <div class="card small-card">
             <h3>{{ t.get('current_streak', 'Current streak') }}</h3>
-            <p><strong>{{ streak }} {{ t.get('days_of_checkins', 'days of daily check-ins') }}</strong></p>
+            <p id="dashboard-streak" data-days-label="{{ t.get('days_of_checkins', 'days of daily check-ins') }}" aria-live="polite"><strong>{{ streak }} {{ t.get('days_of_checkins', 'days of daily check-ins') }}</strong></p>
         </div>
     </div>
     <div class="card" style="margin-top: 1.5rem;">
         <h3>{{ t.get('weekly_mood_chart', 'Weekly mood chart') }}</h3>
-        {% if has_chart_data %}
         <canvas id="dashboardChart" height="120"></canvas>
-        {% if chart_entry_count == 1 %}<p>{{ t.get('single_chart_entry', 'One check-in is shown. Add another to see a trend line.') }}</p>{% endif %}
-        {% else %}
-        <p>{{ t.get('no_chart_data', 'No mood check-ins yet. Add one in Mood Tracker to see your trend.') }} <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') }}</a></p>
-        {% endif %}
+        <p id="dashboard-chart-empty" {% if has_chart_data %}hidden{% endif %}>{{ t.get('no_chart_data', 'No mood check-ins yet. Add one in Mood Tracker to see your trend.') }} <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') }}</a></p>
     </div>
     <div class="grid cards-4" style="margin-top: 1.5rem;">
         <div class="card small-card">
@@ -59,42 +45,39 @@
     </div>
 </section>
 
-{% if has_chart_data %}
 <script>
-const labels = {{ chart_labels | tojson }};
-const moodData = {{ mood_chart | tojson }};
-const stressData = {{ stress_chart | tojson }};
-const ctx = document.getElementById('dashboardChart').getContext('2d');
-new Chart(ctx, {
+(() => {
+const chartCanvas = document.getElementById('dashboardChart');
+const chart = new Chart(chartCanvas, {
     type: 'line',
     data: {
         labels: labels,
         datasets: [
             {
-                label: 'Mood',
+                label: {{ t.get('mood_label', 'Mood')|title|tojson }},
                 data: moodData,
                 yAxisID: 'mood',
                 pointRadius: 5,
                 pointHoverRadius: 7,
-                pointBackgroundColor: '#1a5f7a',
-                pointBorderColor: '#f3f7fa',
+                pointBackgroundColor: '#86a98f',
+                pointBorderColor: '#1e293b',
                 pointBorderWidth: 2,
-                borderColor: '#1a5f7a',
-                backgroundColor: 'rgba(26, 95, 122, 0.12)',
+                borderColor: '#86a98f',
+                backgroundColor: 'rgba(134, 169, 143, 0.16)',
                 tension: 0.35,
                 fill: true,
             },
             {
-                label: 'Stress',
+                label: {{ t.get('stress_label', 'Stress')|title|tojson }},
                 data: stressData,
                 yAxisID: 'stress',
                 pointRadius: 5,
                 pointHoverRadius: 7,
-                pointBackgroundColor: '#f4d35e',
-                pointBorderColor: '#f3f7fa',
+                pointBackgroundColor: '#6ee7b7',
+                pointBorderColor: '#1e293b',
                 pointBorderWidth: 2,
-                borderColor: '#f4d35e',
-                backgroundColor: 'rgba(244, 211, 94, 0.16)',
+                borderColor: '#6ee7b7',
+                backgroundColor: 'rgba(110, 231, 183, 0.12)',
                 tension: 0.35,
                 fill: true,
             },
@@ -102,13 +85,51 @@ new Chart(ctx, {
     },
     options: {
         responsive: true,
-        plugins: { legend: { position: 'top' } },
+        plugins: { legend: { position: 'top', labels: { color: '#cbd5e1' } } },
         scales: {
-            mood: { type: 'linear', position: 'left', min: 1, max: 5, title: { display: true, text: 'Mood (1-5)' } },
-            stress: { type: 'linear', position: 'right', min: 1, max: 10, grid: { drawOnChartArea: false }, title: { display: true, text: 'Stress (1-10)' } },
+            mood: { type: 'linear', position: 'left', min: 1, max: 5, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.12)' }, title: { display: true, text: {{ t.get('mood_axis_label')|tojson }}, color: '#cbd5e1' } },
+            stress: { type: 'linear', position: 'right', min: 1, max: 10, ticks: { color: '#94a3b8' }, grid: { drawOnChartArea: false }, title: { display: true, text: {{ t.get('stress_axis_label')|tojson }}, color: '#cbd5e1' } },
         },
     },
 });
+
+const noChartData = document.getElementById('dashboard-chart-empty');
+const updateDashboard = async () => {
+    try {
+        const [summaryResponse, historyResponse] = await Promise.all([
+            fetch('/api/user-summary', { headers: { Accept: 'application/json' } }),
+            fetch('/api/mood-history', { headers: { Accept: 'application/json' } }),
+        ]);
+        if (!summaryResponse.ok || !historyResponse.ok) return;
+
+        const summary = await summaryResponse.json();
+        const history = await historyResponse.json();
+        const assessment = document.getElementById('dashboard-assessment');
+        const mood = document.getElementById('dashboard-mood');
+        const streak = document.getElementById('dashboard-streak');
+
+        assessment.textContent = summary.assessment
+            ? `${summary.assessment.score} — ${summary.assessment.severity} (${new Date(summary.assessment.created_at).toLocaleDateString()})`
+            : assessment.dataset.emptyText;
+        mood.textContent = summary.today_mood
+            ? `${summary.today_mood.mood_score}/5 ${mood.dataset.moodLabel} · ${summary.today_mood.stress_level}/10 ${mood.dataset.stressLabel}`
+            : mood.dataset.emptyText;
+        streak.textContent = `${summary.streak} ${streak.dataset.daysLabel}`;
+        chart.data.labels = history.labels;
+        chart.data.datasets[0].data = history.mood;
+        chart.data.datasets[1].data = history.stress;
+        chart.update();
+        noChartData.hidden = !history.mood.some(value => value !== null);
+    } catch (error) {
+        console.error('Unable to refresh dashboard data.', error);
+    }
+};
+
+updateDashboard();
+window.addEventListener('focus', updateDashboard);
+window.addEventListener('storage', (event) => {
+    if (event.key === 'angaza-checkin-updated') updateDashboard();
+});
+})();
 </script>
-{% endif %}
 {% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="admin-page-heading">
+    <h1>{{ t.get('system_admin') }}</h1>
+    <p>{{ t.get('engagement_overview') }}</p>
+</header>
+{% include "_admin_activity.html" %}
+{% endblock %}

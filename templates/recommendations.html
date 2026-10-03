@@ -4,23 +4,23 @@
     .hospital-finder { max-width: 900px; margin: 2rem auto; }
     .personal-recommendations { max-width: 900px; margin: 2rem auto 0; }
     .recommendation-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0.75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
-    .recommendation-tab { min-height: 100%; padding: 1rem; border: 1px solid rgba(131,240,214,0.28); border-top: 3px solid #3fa8a3; border-radius: 6px; background: rgba(255,255,255,0.035); color: #d9e4ee; transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease; }
-    .recommendation-tab:hover, .recommendation-tab:focus-visible { border-color: #83f0d6; background: rgba(63,168,163,0.12); transform: translateY(-2px); outline: none; }
+    .recommendation-tab { min-height: 100%; padding: 1rem; border: 1px solid var(--color-border); border-top: 3px solid var(--color-sage); border-radius: 6px; background: var(--color-surface); color: var(--color-text); transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease; }
+    .recommendation-tab:hover, .recommendation-tab:focus-visible { border-color: var(--color-mint); background: var(--color-surface-raised); transform: translateY(-2px); outline: none; }
     @media (prefers-reduced-motion: reduce) { .recommendation-tab { transition: none; } }
     .hospital-search { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0; }
-    .hospital-search input { flex: 1 1 240px; min-width: 0; padding: 0.8rem; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; background: #0b1120; color: #edf2fb; }
+    .hospital-search input { flex: 1 1 240px; min-width: 0; padding: 0.8rem; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg); color: var(--color-text); }
     .hospital-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; }
-    .hospital-actions .button { display: inline-flex; align-items: center; justify-content: center; padding: 0.65rem 1rem; border: 0; border-radius: 6px; background: #3fa8a3; color: #07101f; font-weight: 700; text-decoration: none; cursor: pointer; }
-    .hospital-actions .secondary { border: 1px solid rgba(131,240,214,0.5); background: transparent; color: #83f0d6; }
+    .hospital-actions .button { display: inline-flex; align-items: center; justify-content: center; padding: 0.65rem 1rem; border: 0; border-radius: 6px; background: var(--color-mint); color: var(--color-bg); font-weight: 700; text-decoration: none; cursor: pointer; }
+    .hospital-actions .secondary { border: 1px solid rgba(110,231,183,0.5); background: transparent; color: var(--color-mint); }
     .hospital-status { display: flex; align-items: center; gap: 0.65rem; min-height: 1.5rem; color: #cbd5e1; }
-    .hospital-status[aria-busy="true"]::before { width: 1rem; height: 1rem; border: 2px solid rgba(131,240,214,0.25); border-top-color: #83f0d6; border-radius: 50%; content: ""; animation: hospital-spin 0.8s linear infinite; }
-    .nearest-option { margin: 1.25rem 0; padding: 1rem; border-left: 4px solid #ff8a64; background: rgba(255,138,100,0.08); }
+    .hospital-status[aria-busy="true"]::before { width: 1rem; height: 1rem; border: 2px solid rgba(110,231,183,0.25); border-top-color: var(--color-mint); border-radius: 50%; content: ""; animation: hospital-spin 0.8s linear infinite; }
+    .nearest-option { margin: 1.25rem 0; padding: 1rem; border-left: 4px solid var(--color-sage); background: rgba(134,169,143,0.08); }
     .facility-list { display: grid; gap: 0.75rem; margin-top: 1rem; }
-    .facility-item { padding: 1rem; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; background: rgba(255,255,255,0.035); }
+    .facility-item { padding: 1rem; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); }
     .facility-item h4, .nearest-option h3 { margin: 0 0 0.4rem; }
     .facility-item p, .nearest-option p { margin: 0.35rem 0 0.8rem; color: #cbd5e1; }
     .hospital-fallback { margin-top: 1rem; padding: 1rem; border-left: 4px solid #ffc864; background: rgba(255,200,100,0.08); }
-    .hospital-fallback a { color: #83f0d6; }
+    .hospital-fallback a { color: var(--color-mint); }
     @keyframes hospital-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .hospital-status[aria-busy="true"]::before { animation-duration: 2s; } }
 </style>
@@ -39,31 +39,44 @@
     {% endif %}
 </section>
 <section class="card hospital-finder" aria-labelledby="hospital-finder-title">
-    <h2 id="hospital-finder-title">Hospital Recommendation</h2>
-    <p>Find nearby hospitals and clinics, or search by town or city.</p>
+    <h2 id="hospital-finder-title">{{ t.get('hospital_recommendation', 'Hospital Recommendation') }}</h2>
+    <p>{{ t.get('find_nearby_hospitals', 'Find nearby hospitals and clinics, or search by town or city.') }}</p>
 
     <form id="hospital-search-form" class="hospital-search">
-        <label for="hospital-location-input" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Search town or city</label>
-        <input id="hospital-location-input" type="search" placeholder="Search location (town or city)" autocomplete="address-level2" maxlength="160" />
+        <label for="hospital-location-input" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">{{ t.get('search_town_city', 'Search town or city') }}</label>
+        <input id="hospital-location-input" type="search" placeholder="{{ t.get('search_location', 'Search location (town or city)') }}" autocomplete="address-level2" maxlength="160" />
         <div class="hospital-actions">
-            <button class="button" type="submit">Search</button>
-            <button class="button secondary" id="use-current-location" type="button">Use my location</button>
+            <button class="button" type="submit">{{ t.get('search', 'Search') }}</button>
+            <button class="button secondary" id="use-current-location" type="button">{{ t.get('use_my_location', 'Use my location') }}</button>
         </div>
     </form>
 
-    <div id="hospital-status" class="hospital-status" role="status" aria-live="polite" aria-busy="false">Requesting your location…</div>
+    <div id="hospital-status" class="hospital-status" role="status" aria-live="polite" aria-busy="false">{{ t.get('requesting_location', 'Requesting your location…') }}</div>
     <section id="nearest-option" class="nearest-option" aria-live="polite" hidden></section>
     <section id="facility-results" aria-live="polite"></section>
     <aside id="hospital-fallback" class="hospital-fallback" role="note" hidden>
         <p id="fallback-message"></p>
-        <p><a id="fallback-maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=hospitals+near+me" target="_blank" rel="noopener noreferrer">Search hospitals on Google Maps</a></p>
-        <p>If this is an emergency, call your local emergency number. In Kenya, call <a href="tel:999">999</a> or <a href="tel:112">112</a>, or view the <a href="/emergency">emergency contacts</a>.</p>
+        <p><a id="fallback-maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=hospitals+near+me" target="_blank" rel="noopener noreferrer">{{ t.get('search_hospitals_maps', 'Search hospitals on Google Maps') }}</a></p>
+        <p>{{ t.get('emergency_map_note', 'If this is an emergency, call your local emergency number. In Kenya, call') }} <a href="tel:999">999</a> {{ t.get('or', 'or') }} <a href="tel:112">112</a>, {{ t.get('or_view', 'or view the') }} <a href="/emergency">{{ t.get('emergency_contacts_link', 'emergency contacts') }}</a>.</p>
     </aside>
-    <p style="margin-top:1rem;font-size:0.85rem;color:#94a3b8;">Facility data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
+    <p style="margin-top:1rem;font-size:0.85rem;color:#94a3b8;">{{ t.get('facility_data_credit', 'Facility data') }} © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
 </section>
 
 <script>
 (() => {
+    const copy = {{ {
+        'clinic': t.get('clinic'), 'hospital': t.get('hospital'), 'away': t.get('away'),
+        'requestingLocation': t.get('requesting_location'),
+        'directions': t.get('get_directions'), 'nearestDirections': t.get('directions_to_nearest'),
+        'facilityDetails': t.get('facility_result_details'), 'findingFacilities': t.get('finding_facilities'),
+        'noFacilities': t.get('nearby_facilities_missing'), 'tryNearby': t.get('nearby_facilities_suggestion'),
+        'nearbyHeading': t.get('nearby_facilities_heading'), 'oneFacility': t.get('nearby_facility_found'),
+        'manyFacilities': t.get('nearby_facilities_found'), 'facilityError': t.get('nearby_facility_error'),
+        'facilityFailed': t.get('nearby_facility_failed'), 'findingLocation': t.get('location_finding'),
+        'locationFailed': t.get('location_failed'), 'locationUnavailable': t.get('location_unavailable'),
+        'permissionFailed': t.get('location_permission_failed'), 'manualSuggestion': t.get('location_manual_suggestion'),
+        'checkSuggestion': t.get('location_check_suggestion'), 'queryRequired': t.get('location_query_required'),
+    }|tojson }};
     const form = document.getElementById('hospital-search-form');
     const locationInput = document.getElementById('hospital-location-input');
     const currentLocationButton = document.getElementById('use-current-location');
@@ -103,14 +116,14 @@
         const heading = document.createElement(prominent ? 'h3' : 'h4');
         heading.textContent = facility.name;
         const details = document.createElement('p');
-        const type = facility.type === 'clinic' ? 'Clinic' : 'Hospital';
-        details.textContent = `${type} · ${facility.distance_km} km away${facility.address ? ` · ${facility.address}` : ''}`;
+        const type = facility.type === 'clinic' ? copy.clinic : copy.hospital;
+        details.textContent = copy.facilityDetails.replace('{type}', type).replace('{distance}', facility.distance_km) + (facility.address ? ` · ${facility.address}` : '');
         const action = document.createElement('a');
         action.className = 'button';
         action.href = directionsUrl(facility);
         action.target = '_blank';
         action.rel = 'noopener noreferrer';
-        action.textContent = prominent ? 'Get directions to nearest' : 'Get directions';
+        action.textContent = prominent ? copy.nearestDirections : copy.directions;
         card.append(heading, details, action);
         return card;
     }
@@ -120,7 +133,7 @@
         nearestOption.hidden = true;
         nearestOption.replaceChildren();
         results.replaceChildren();
-        setStatus('Finding nearby hospitals and clinics…', true);
+        setStatus(copy.findingFacilities, true);
         try {
             const response = await fetch('/api/recommend', {
                 method: 'POST',
@@ -129,33 +142,33 @@
             });
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Nearby facility search is unavailable.');
+                throw new Error(data.error || copy.facilityError);
             }
             const facilities = data.facilities || [];
             if (!facilities.length) {
-                setStatus('No nearby hospitals or clinics were found within 20 km.');
-                showFallback('Try another town or city, or search nearby hospitals directly on Google Maps.', location);
+                setStatus(copy.noFacilities);
+                showFallback(copy.tryNearby, location);
                 return;
             }
             const nearest = data.nearest || facilities[0];
             nearestOption.append(makeFacilityCard(nearest, true));
             nearestOption.hidden = false;
             const heading = document.createElement('h3');
-            heading.textContent = 'Nearby hospitals and clinics';
+            heading.textContent = copy.nearbyHeading;
             const list = document.createElement('div');
             list.className = 'facility-list';
             facilities.forEach((facility) => list.append(makeFacilityCard(facility)));
             results.append(heading, list);
-            setStatus(`${facilities.length} nearby ${facilities.length === 1 ? 'facility' : 'facilities'} found.`);
+            setStatus(`${facilities.length} ${facilities.length === 1 ? copy.oneFacility : copy.manyFacilities}`);
         } catch (error) {
-            setStatus(error.message || 'Nearby facility search failed.');
-            showFallback('Try searching by town or city, open Google Maps, or use the emergency contacts below.', location);
+            setStatus(error.message || copy.facilityFailed);
+            showFallback(copy.manualSuggestion, location);
         }
     }
 
     async function searchTown(query) {
         fallback.hidden = true;
-        setStatus('Finding that location…', true);
+        setStatus(copy.findingLocation, true);
         try {
             const response = await fetch('/api/geocode', {
                 method: 'POST',
@@ -164,27 +177,27 @@
             });
             const location = await response.json();
             if (!response.ok) {
-                throw new Error(location.error || 'Location lookup failed.');
+                throw new Error(location.error || copy.locationFailed);
             }
             await loadFacilities(location);
         } catch (error) {
-            setStatus(error.message || 'Location lookup failed.');
-            showFallback('Check the spelling or enter a nearby town or city. You can also open Google Maps or the emergency contacts below.');
+            setStatus(error.message || copy.locationFailed);
+            showFallback(copy.checkSuggestion);
         }
     }
 
     function requestCurrentLocation() {
         if (!navigator.geolocation) {
-            setStatus('Location is unavailable in this browser. Enter a town or city to search.');
-            showFallback('Enter a town or city, open Google Maps, or use the emergency contacts below.');
+            setStatus(copy.locationUnavailable);
+            showFallback(copy.manualSuggestion);
             return;
         }
-        setStatus('Requesting your location…', true);
+        setStatus(copy.requestingLocation, true);
         navigator.geolocation.getCurrentPosition(
             (position) => loadFacilities({lat: position.coords.latitude, lng: position.coords.longitude}),
             () => {
-                setStatus('Location access was unavailable. Enter a town or city to find nearby care.');
-                showFallback('Enter a town or city, open Google Maps, or use the emergency contacts below.');
+                setStatus(copy.permissionFailed);
+                showFallback(copy.manualSuggestion);
             },
             {enableHighAccuracy: true, timeout: 12000, maximumAge: 300000}
         );
@@ -194,7 +207,7 @@
         event.preventDefault();
         const query = locationInput.value.trim();
         if (query.length < 2) {
-            setStatus('Enter a town or city to search.');
+            setStatus(copy.queryRequired);
             locationInput.focus();
             return;
         }

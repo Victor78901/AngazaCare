@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{% if request.args.get('saved') == '1' %}
+<script>localStorage.setItem('angaza-checkin-updated', String(Date.now()));</script>
+{% endif %}
 <div class="card" style="max-width: 880px; margin: 2rem auto;">
     <h2>{{ t.get('mood_tracker_title', 'Daily Mood Tracker') }}</h2>
     <form method="POST">
@@ -24,7 +27,7 @@
 </div>
 
 <div class="card" style="max-width: 900px; margin: 2rem auto;">
-    <h3>Weekly trend</h3>
+    <h3>{{ t.get('weekly_trend', 'Weekly trend') }}</h3>
     {% if has_chart_data %}
     <canvas id="moodChart" height="110"></canvas>
     {% if chart_entry_count == 1 %}<p>{{ t.get('single_chart_entry', 'One check-in is shown. Add another to see a trend line.') }}</p>{% endif %}
@@ -45,30 +48,30 @@ new Chart(ctx, {
         labels: labels,
         datasets: [
             {
-                label: 'Mood',
+                label: {{ t.get('mood_label', 'Mood')|title|tojson }},
                 data: moodData,
                 yAxisID: 'mood',
                 pointRadius: 5,
                 pointHoverRadius: 7,
-                pointBackgroundColor: '#1a5f7a',
-                pointBorderColor: '#f3f7fa',
+                pointBackgroundColor: '#86a98f',
+                pointBorderColor: '#1e293b',
                 pointBorderWidth: 2,
-                borderColor: '#1a5f7a',
-                backgroundColor: 'rgba(26, 95, 122, 0.16)',
+                borderColor: '#86a98f',
+                backgroundColor: 'rgba(134, 169, 143, 0.16)',
                 tension: 0.3,
                 fill: true,
             },
             {
-                label: 'Stress',
+                label: {{ t.get('stress_label', 'Stress')|title|tojson }},
                 data: stressData,
                 yAxisID: 'stress',
                 pointRadius: 5,
                 pointHoverRadius: 7,
-                pointBackgroundColor: '#d62828',
-                pointBorderColor: '#f3f7fa',
+                pointBackgroundColor: '#6ee7b7',
+                pointBorderColor: '#1e293b',
                 pointBorderWidth: 2,
-                borderColor: '#d62828',
-                backgroundColor: 'rgba(214, 40, 40, 0.14)',
+                borderColor: '#6ee7b7',
+                backgroundColor: 'rgba(110, 231, 183, 0.12)',
                 tension: 0.3,
                 fill: true,
             },
@@ -76,10 +79,10 @@ new Chart(ctx, {
     },
     options: {
         responsive: true,
-        plugins: { legend: { position: 'top' } },
+        plugins: { legend: { position: 'top', labels: { color: '#cbd5e1' } } },
         scales: {
-            mood: { type: 'linear', position: 'left', min: 1, max: 5, title: { display: true, text: 'Mood (1-5)' } },
-            stress: { type: 'linear', position: 'right', min: 1, max: 10, grid: { drawOnChartArea: false }, title: { display: true, text: 'Stress (1-10)' } },
+            mood: { type: 'linear', position: 'left', min: 1, max: 5, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.12)' }, title: { display: true, text: {{ t.get('mood_axis_label')|tojson }}, color: '#cbd5e1' } },
+            stress: { type: 'linear', position: 'right', min: 1, max: 10, ticks: { color: '#94a3b8' }, grid: { drawOnChartArea: false }, title: { display: true, text: {{ t.get('stress_axis_label')|tojson }}, color: '#cbd5e1' } },
         },
     },
 });
