@@ -2,18 +2,17 @@
 {% block content %}
 <section style="margin-top: 1rem;">
     <div class="card">
-        <p class="section-title">{{ t.get('good_day', 'Good day') }}, {{ current_user.name }}.</p>
+        <p class="section-title"><span id="timeGreeting">{{ time_greeting }}</span>, {{ current_user.name }}.</p>
         <h2>{{ t.get('todays_wellness', "Today's wellness snapshot") }}</h2>
         <p>{{ daily_quote }}</p>
     </div>
     <div class="grid summary-grid" style="margin-top: 1.5rem;">
         <div class="card small-card">
-            <h3>{{ t.get('last_assessment', 'Last assessment') }}</h3>
-            {% if last_assessment %}
-                <p><strong>{{ last_assessment.score }}</strong> — {{ last_assessment.severity }}</p>
-                <p>{{ last_assessment.created_at.strftime('%b %d, %Y') }}</p>
+            <h3>{{ t.get('last_login', 'Last login') }}</h3>
+            {% if current_user.last_login_at %}
+                <p><time id="lastLoginTime" datetime="{{ current_user.last_login_at.isoformat() }}Z">{{ current_user.last_login_at.strftime('%b %d, %Y at %I:%M:%S %p UTC') }}</time></p>
             {% else %}
-                <p>{{ t.get('no_assessment', 'No assessment yet.') }}</p>
+                <p>{{ t.get('never_logged_in', 'No login recorded yet.') }}</p>
             {% endif %}
         </div>
         <div class="card small-card">
@@ -21,13 +20,19 @@
             {% if today_entry %}
                 <p><strong>{{ today_entry.mood_score }}/5</strong> {{ t.get('mood_label', 'mood') }}</p>
                 <p><strong>{{ today_entry.stress_level }}/10</strong> {{ t.get('stress_label', 'stress') }}</p>
+                <p><strong>{{ t.get('todays_journal', "Today's journal") }}:</strong></p>
+                {% if today_entry.note %}
+                    <p>{{ today_entry.note }}</p>
+                {% else %}
+                    <p>{{ t.get('no_journal', 'No journal entry saved today.') }}</p>
+                {% endif %}
             {% else %}
                 <p>{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
             {% endif %}
         </div>
         <div class="card small-card">
-            <h3>{{ t.get('current_streak', 'Current streak') }}</h3>
-            <p><strong>{{ streak }} {{ t.get('days_of_checkins', 'days of daily check-ins') }}</strong></p>
+            <h3>{{ t.get('login_count', 'Total logins') }}</h3>
+            <p><strong>{{ current_user.login_count }} {{ t.get('times_logged_in', 'times logged in') }}</strong></p>
         </div>
     </div>
     <div class="card" style="margin-top: 1.5rem;">
@@ -58,6 +63,32 @@
 const labels = {{ chart_labels | safe }};
 const moodData = {{ mood_chart | safe }};
 const stressData = {{ stress_chart | safe }};
+const timeGreeting = document.getElementById('timeGreeting');
+function updateTimeGreeting() {
+    if (!timeGreeting) return;
+    const hour = new Date().getHours();
+    const isSwahili = {{ 'true' if current_lang == 'sw' else 'false' }};
+    if (hour >= 5 && hour < 12) {
+        timeGreeting.textContent = isSwahili ? 'Habari za asubuhi' : 'Good Morning';
+    } else if (hour >= 12 && hour < 17) {
+        timeGreeting.textContent = isSwahili ? 'Habari za mchana' : 'Good Afternoon';
+    } else {
+        timeGreeting.textContent = isSwahili ? 'Habari za jioni' : 'Good Evening';
+    }
+}
+updateTimeGreeting();
+setInterval(updateTimeGreeting, 60 * 1000);
+const lastLoginTime = document.getElementById('lastLoginTime');
+if (lastLoginTime) {
+    const loginDate = new Date(lastLoginTime.dateTime);
+    if (!Number.isNaN(loginDate.getTime())) {
+        lastLoginTime.textContent = loginDate.toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'medium',
+        });
+        lastLoginTime.title = `Logged in at ${loginDate.toLocaleString()}`;
+    }
+}
 const ctx = document.getElementById('dashboardChart').getContext('2d');
 new Chart(ctx, {
     type: 'line',

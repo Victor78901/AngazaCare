@@ -281,6 +281,10 @@ def migrate_db():
         cursor.execute("ALTER TABLE user ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'patient';")
     if "consent_to_clinician_review" not in columns:
         cursor.execute("ALTER TABLE user ADD COLUMN consent_to_clinician_review BOOLEAN NOT NULL DEFAULT 0;")
+    if "last_login_at" not in columns:
+        cursor.execute("ALTER TABLE user ADD COLUMN last_login_at DATETIME;")
+    if "login_count" not in columns:
+        cursor.execute("ALTER TABLE user ADD COLUMN login_count INTEGER NOT NULL DEFAULT 0;")
     connection.commit()
     connection.close()
 
@@ -619,6 +623,9 @@ def login():
         password = request.form.get("password")
         user = User.query.filter_by(email=email).first()
         if user and check_password(password, user.password_hash):
+            user.last_login_at = datetime.utcnow()
+            user.login_count = (user.login_count or 0) + 1
+            db.session.commit()
             login_user(user)
             return redirect(url_for("dashboard"))
         flash(get_text("invalid_credentials"), "danger")
@@ -761,18 +768,20 @@ def set_language(lang):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    last_assessment = Assessment.query.filter_by(user_id=current_user.id).order_by(Assessment.created_at.desc()).first()
     today_entry = MoodEntry.query.filter_by(user_id=current_user.id, date=date.today()).first()
-    streak = get_streak(current_user)
     labels, mood_data, stress_data = get_mood_chart_data(current_user)
     crisis_detected = check_crisis_flag(current_user)
+    local_hour = datetime.now().hour
+    if get_language() == "sw":
+        time_greeting = "Habari za asubuhi" if 5 <= local_hour < 12 else "Habari za mchana" if local_hour < 17 else "Habari za jioni"
+    else:
+        time_greeting = "Good Morning" if 5 <= local_hour < 12 else "Good Afternoon" if local_hour < 17 else "Good Evening"
     
     return render_template(
         "dashboard.html",
         daily_quote=get_daily_quote(),
-        last_assessment=last_assessment,
+        time_greeting=time_greeting,
         today_entry=today_entry,
-        streak=streak,
         chart_labels=json.dumps(labels),
         mood_chart=json.dumps(mood_data),
         stress_chart=json.dumps(stress_data),
@@ -1004,7 +1013,7 @@ KIRAYA_KB = {
 # Language translations for UI
 TRANSLATIONS = {
     "en": {
-        "dashboard": "Dashboard",
+        "dashboard": "Home",
         "assessment": "Assessment",
         "mood_tracker": "Mood Tracker",
         "recommendations": "Recommendations",
@@ -1017,7 +1026,12 @@ TRANSLATIONS = {
         "kiswahili": "Kiswahili",
         "good_day": "Good day",
         "todays_wellness": "Today's wellness snapshot",
-        "last_assessment": "Last assessment",
+        "last_login": "Last login",
+        "never_logged_in": "No login recorded yet.",
+        "login_count": "Total logins",
+        "times_logged_in": "times logged in",
+        "todays_journal": "Today's journal",
+        "no_journal": "No journal entry saved today.",
         "todays_mood": "Today's mood",
         "current_streak": "Current streak",
         "days_of_checkins": "days of daily check-ins",
@@ -1100,7 +1114,7 @@ TRANSLATIONS = {
         "logged_out": "You have been logged out.",
     },
     "sw": {
-        "dashboard": "Dashibodi",
+        "dashboard": "Mwanzo",
         "assessment": "Tathmini",
         "mood_tracker": "Kufuatilia Hali ya Jini",
         "recommendations": "Mapendekezo",
@@ -1113,7 +1127,12 @@ TRANSLATIONS = {
         "kiswahili": "Kiswahili",
         "good_day": "Habari",
         "todays_wellness": "Picha ya afya yako leo",
-        "last_assessment": "Tathmini ya mwisho",
+        "last_login": "Uingiaji wa mwisho",
+        "never_logged_in": "Hakuna uingiaji uliorekodiwa bado.",
+        "login_count": "Jumla ya mara za kuingia",
+        "times_logged_in": "mara umeingia",
+        "todays_journal": "Jarida la leo",
+        "no_journal": "Hakuna maandishi ya jarida yaliyohifadhiwa leo.",
         "todays_mood": "Hali ya jini leo",
         "current_streak": "Kamba ya sasa",
         "days_of_checkins": "siku za ukaguzi wa kila siku",
