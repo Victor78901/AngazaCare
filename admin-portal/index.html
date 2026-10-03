@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="admin-api-base" content="http://127.0.0.1:5000" />
+    <title>AngazaCare | Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./app.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="./" aria-label="AngazaCare administration home">
+            <span class="brand-mark" aria-hidden="true">A</span>
+            <span class="brand-name">AngazaCare <small>ADMINISTRATION</small></span>
+        </a>
+        <div class="topbar-actions">
+            <span id="connection-state" class="connection-state">Connecting</span>
+            <button id="logout-button" class="button button-quiet" type="button" hidden>Sign out</button>
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <section id="login-view" class="login-view" aria-labelledby="login-heading" hidden>
+            <div class="login-heading">
+                <p class="eyebrow">SECURE ACCESS</p>
+                <h1 id="login-heading">Administrator sign in</h1>
+                <p>Use an authorized AngazaCare administrator or psychiatrist account.</p>
+            </div>
+            <form id="login-form" class="login-form">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="username" required maxlength="120" />
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required />
+                <button class="button button-primary" type="submit">Sign in</button>
+                <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section id="dashboard-view" hidden aria-labelledby="dashboard-heading">
+            <div class="page-heading">
+                <div>
+                    <p class="eyebrow">ACTIVITY OVERVIEW</p>
+                    <h1 id="dashboard-heading">Engagement dashboard</h1>
+                    <p id="activity-scope" class="scope-label"></p>
+                </div>
+                <button id="refresh-button" class="button button-quiet" type="button">Refresh data</button>
+            </div>
+
+            <section class="metrics" aria-label="Engagement metrics">
+                <article class="metric metric-mint">
+                    <span>Active users <small>30 days</small></span>
+                    <strong id="active-users">0</strong>
+                </article>
+                <article class="metric metric-blue">
+                    <span>Assessments</span>
+                    <strong id="assessment-total">0</strong>
+                </article>
+                <article class="metric metric-coral">
+                    <span>Chat interactions</span>
+                    <strong id="chat-total">0</strong>
+                </article>
+            </section>
+
+            <section class="data-section" aria-labelledby="chat-heading">
+                <div class="section-heading">
+                    <div>
+                        <h2 id="chat-heading">Recent chatbot activity</h2>
+                        <p>Prompt text is withheld unless clinician-review consent is recorded.</p>
+                    </div>
+                </div>
+                <div class="table-shell">
+                    <table>
+                        <thead><tr><th>Timestamp</th><th>User / session</th><th>Prompt</th></tr></thead>
+                        <tbody id="chat-rows"><tr><td colspan="3" class="empty-state">No chatbot activity recorded.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="data-section" aria-labelledby="assessment-heading">
+                <div class="section-heading">
+                    <div>
+                        <h2 id="assessment-heading">Recent assessment results</h2>
+                        <p>Scores and responses are shown only with clinician-review consent.</p>
+                    </div>
+                </div>
+                <div class="table-shell">
+                    <table>
+                        <thead><tr><th>Timestamp</th><th>User ID</th><th>Clinical summary / responses</th></tr></thead>
+                        <tbody id="assessment-rows"><tr><td colspan="3" class="empty-state">No assessments recorded.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+            <p id="dashboard-message" class="dashboard-message" role="status" aria-live="polite"></p>
+        </section>
+    </main>
+</body>
+</html>

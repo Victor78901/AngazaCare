@@ -1,54 +1,124 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Patient #{{ patient.id }}</h1>
-<p>Name: <span class="blurred-text">{{ masked_name }}</span></p>
-<p>Email: <span class="blurred-text">{{ masked_email }}</span></p>
-<p>Consent to clinician review: {{ 'Yes' if patient.consent_to_clinician_review else 'No' }}</p>
+<h1>{{ t.get('patient') }} #{{ patient.id }}</h1>
+<p>{{ t.get('name_label') }} <span class="blurred-text">{{ masked_name }}</span></p>
+<p>{{ t.get('email_label') }} <span class="blurred-text">{{ masked_email }}</span></p>
+<p>{{ t.get('consent_review_label') }} {{ t.get('yes') if patient.consent_to_clinician_review else t.get('no') }}</p>
 
+{% if ai_summary %}
 <div class="card admin-ai-card">
-    <h2>AI Summary</h2>
+    <h2>{{ t.get('ai_summary') }}</h2>
     <div class="ai-summary-block">
-        <h3>Prompt</h3>
+        <h3>{{ t.get('prompt') }}</h3>
         <pre>{{ ai_summary.prompt }}</pre>
     </div>
     <div class="ai-summary-block">
-        <h3>Response</h3>
+        <h3>{{ t.get('ai_response') }}</h3>
         <p>{{ ai_summary.response }}</p>
     </div>
 </div>
-
-{% if not full_access %}
-<div class="alert alert-warning">Full record access denied by patient consent.</div>
+{% else %}
+<div class="alert alert-warning">{{ t.get('ai_summary_withheld') }}</div>
 {% endif %}
 
-<h2>Assessments</h2>
-<table class="table">
-    <thead>
-        <tr>
-            <th>Date</th>
-            <th>Score</th>
-            <th>Severity</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for a in assessments %}
-        <tr {% if a.score >= 20 %}style="background:#331f24; color:#fff;"{% endif %}>
-            <td>{{ a.date }}</td>
-            <td>{{ a.score }}</td>
-            <td>{{ a.severity }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if not full_access %}
+<div class="alert alert-warning">{{ t.get('record_access_denied') }}</div>
+{% endif %}
 
-<h2>Recent Mood Entries</h2>
+<h2>{{ t.get('ai_chat_history') }}</h2>
+{% if chat_messages %}
+<div class="chat-history-section">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>{{ t.get('date_time') }}</th>
+                <th>{{ t.get('patient_question') }}</th>
+                <th>{{ t.get('ai_response') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chat in chat_messages %}
+            <tr>
+                <td><small>{{ chat.created_at }}</small></td>
+                <td>
+                    {% if full_access %}
+                        <pre class="admin-activity-message">{{ chat.user_message }}</pre>
+                    {% else %}
+                        <span class="admin-privacy-note">{{ t.get('prompt_withheld') }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if full_access %}
+                        <pre class="admin-activity-message">{{ chat.ai_response }}</pre>
+                    {% else %}
+                        <span class="admin-privacy-note">{{ t.get('response_withheld') }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p><em>{{ t.get('no_chat_history') }}</em></p>
+{% endif %}
+
+<h2>{{ t.get('assessments_phq9') }}</h2>
+{% if assessments %}
+<div class="assessments-section">
+    {% for a in assessments %}
+    <div class="card assessment-card" style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px;">
+        <h3>{{ t.get('assessment_card').format(date=a.date, score=a.score, severity=a.severity) }}</h3>
+        
+        {% if a.details %}
+        <div style="margin-top: 10px;">
+            <table class="table" style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{{ t.get('question') }}</th>
+                        <th>{{ t.get('answer') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for detail in a.details %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ detail.question }}</td>
+                        <td>
+                            {% if detail.answer == 0 %}
+                            <span>{{ t.get('not_at_all') }} (0)</span>
+                            {% elif detail.answer == 1 %}
+                            <span>{{ t.get('several_days') }} (1)</span>
+                            {% elif detail.answer == 2 %}
+                            <span>{{ t.get('more_than_half') }} (2)</span>
+                            {% elif detail.answer == 3 %}
+                            <span>{{ t.get('nearly_every_day') }} (3)</span>
+                            {% else %}
+                            <span>{{ detail.answer }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p><em>{{ t.get('no_assessments_available') }}</em></p>
+{% endif %}
+
+<h2>{{ t.get('recent_mood_entries') }}</h2>
 <table class="table">
     <thead>
         <tr>
-            <th>Date</th>
-            <th>Mood</th>
-            <th>Stress</th>
-            <th>Note</th>
+            <th>{{ t.get('date') }}</th>
+            <th>{{ t.get('mood_label')|title }}</th>
+            <th>{{ t.get('stress_label')|title }}</th>
+            <th>{{ t.get('note') }}</th>
         </tr>
     </thead>
     <tbody>
@@ -57,7 +127,7 @@
             <td>{{ m.date }}</td>
             <td>{{ m.mood_score }}</td>
             <td>{{ m.stress_level }}</td>
-            <td>{{ m.note if m.note else 'Not available' }}</td>
+            <td>{{ m.note if m.note else t.get('not_available') }}</td>
         </tr>
         {% endfor %}
     </tbody>

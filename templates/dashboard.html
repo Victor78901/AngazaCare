@@ -12,32 +12,22 @@
             {% if current_user.last_login_at %}
                 <p><time id="lastLoginTime" datetime="{{ current_user.last_login_at.isoformat() }}Z">{{ current_user.last_login_at.strftime('%b %d, %Y at %I:%M:%S %p UTC') }}</time></p>
             {% else %}
-                <p>{{ t.get('never_logged_in', 'No login recorded yet.') }}</p>
+                <p id="lastLoginTime" data-empty-text="{{ t.get('never_logged_in', 'No login recorded yet.') }}">{{ t.get('never_logged_in', 'No login recorded yet.') }}</p>
             {% endif %}
         </div>
         <div class="card small-card">
             <h3>{{ t.get('todays_mood', "Today's mood") }}</h3>
-            {% if today_entry %}
-                <p><strong>{{ today_entry.mood_score }}/5</strong> {{ t.get('mood_label', 'mood') }}</p>
-                <p><strong>{{ today_entry.stress_level }}/10</strong> {{ t.get('stress_label', 'stress') }}</p>
-                <p><strong>{{ t.get('todays_journal', "Today's journal") }}:</strong></p>
-                {% if today_entry.note %}
-                    <p>{{ today_entry.note }}</p>
-                {% else %}
-                    <p>{{ t.get('no_journal', 'No journal entry saved today.') }}</p>
-                {% endif %}
-            {% else %}
-                <p>{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
-            {% endif %}
+            <p id="dashboard-mood" data-empty-text="{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}" data-mood-label="{{ t.get('mood_label', 'mood') }}" data-stress-label="{{ t.get('stress_label', 'stress') }}" data-journal-label="{{ t.get('todays_journal', "Today's journal") }}" data-no-journal="{{ t.get('no_journal', 'No journal entry saved today.') }}" aria-live="polite">{{ t.get('record_feelings', 'Record your feelings in the mood tracker.') }}</p>
         </div>
         <div class="card small-card">
             <h3>{{ t.get('login_count', 'Total logins') }}</h3>
-            <p><strong>{{ current_user.login_count }} {{ t.get('times_logged_in', 'times logged in') }}</strong></p>
+            <p id="dashboard-login-count" data-label="{{ t.get('times_logged_in', 'times logged in') }}"><strong>{{ current_user.login_count or 0 }} {{ t.get('times_logged_in', 'times logged in') }}</strong></p>
         </div>
     </div>
     <div class="card" style="margin-top: 1.5rem;">
         <h3>{{ t.get('weekly_mood_chart', 'Weekly mood chart') }}</h3>
         <canvas id="dashboardChart" height="120"></canvas>
+        <p id="dashboard-chart-empty" {% if has_chart_data %}hidden{% endif %}>{{ t.get('no_chart_data', 'No mood check-ins yet. Add one in Mood Tracker to see your trend.') }} <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') }}</a></p>
     </div>
     <div class="grid cards-4" style="margin-top: 1.5rem;">
         <div class="card small-card">
@@ -60,9 +50,10 @@
 </section>
 
 <script>
-const labels = {{ chart_labels | safe }};
-const moodData = {{ mood_chart | safe }};
-const stressData = {{ stress_chart | safe }};
+(() => {
+const labels = {{ chart_labels | tojson }};
+const moodData = {{ mood_chart | tojson }};
+const stressData = {{ stress_chart | tojson }};
 const timeGreeting = document.getElementById('timeGreeting');
 function updateTimeGreeting() {
     if (!timeGreeting) return;
@@ -79,8 +70,9 @@ function updateTimeGreeting() {
 updateTimeGreeting();
 setInterval(updateTimeGreeting, 60 * 1000);
 const lastLoginTime = document.getElementById('lastLoginTime');
-if (lastLoginTime) {
-    const loginDate = new Date(lastLoginTime.dateTime);
+const renderLoginTime = (value) => {
+    if (!lastLoginTime || !value) return;
+    const loginDate = new Date(value);
     if (!Number.isNaN(loginDate.getTime())) {
         lastLoginTime.textContent = loginDate.toLocaleString(undefined, {
             dateStyle: 'medium',
@@ -88,26 +80,39 @@ if (lastLoginTime) {
         });
         lastLoginTime.title = `Logged in at ${loginDate.toLocaleString()}`;
     }
-}
-const ctx = document.getElementById('dashboardChart').getContext('2d');
-new Chart(ctx, {
+};
+if (lastLoginTime && lastLoginTime.dateTime) renderLoginTime(lastLoginTime.dateTime);
+const chartCanvas = document.getElementById('dashboardChart');
+const chart = new Chart(chartCanvas, {
     type: 'line',
     data: {
         labels: labels,
         datasets: [
             {
-                label: 'Mood',
+                label: {{ t.get('mood_label', 'Mood')|title|tojson }},
                 data: moodData,
-                borderColor: '#1a5f7a',
-                backgroundColor: 'rgba(26, 95, 122, 0.12)',
+                yAxisID: 'mood',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#86a98f',
+                pointBorderColor: '#1e293b',
+                pointBorderWidth: 2,
+                borderColor: '#86a98f',
+                backgroundColor: 'rgba(134, 169, 143, 0.16)',
                 tension: 0.35,
                 fill: true,
             },
             {
-                label: 'Stress',
+                label: {{ t.get('stress_label', 'Stress')|title|tojson }},
                 data: stressData,
-                borderColor: '#f4d35e',
-                backgroundColor: 'rgba(244, 211, 94, 0.16)',
+                yAxisID: 'stress',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#6ee7b7',
+                pointBorderColor: '#1e293b',
+                pointBorderWidth: 2,
+                borderColor: '#6ee7b7',
+                backgroundColor: 'rgba(110, 231, 183, 0.12)',
                 tension: 0.35,
                 fill: true,
             },
@@ -115,9 +120,49 @@ new Chart(ctx, {
     },
     options: {
         responsive: true,
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: true, max: 10 } },
+        plugins: { legend: { position: 'top', labels: { color: '#cbd5e1' } } },
+        scales: {
+            mood: { type: 'linear', position: 'left', min: 1, max: 5, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.12)' }, title: { display: true, text: {{ t.get('mood_axis_label')|tojson }}, color: '#cbd5e1' } },
+            stress: { type: 'linear', position: 'right', min: 1, max: 10, ticks: { color: '#94a3b8' }, grid: { drawOnChartArea: false }, title: { display: true, text: {{ t.get('stress_axis_label')|tojson }}, color: '#cbd5e1' } },
+        },
     },
 });
+
+const noChartData = document.getElementById('dashboard-chart-empty');
+const updateDashboard = async () => {
+    try {
+        const [summaryResponse, historyResponse] = await Promise.all([
+            fetch('/api/user-summary', { headers: { Accept: 'application/json' } }),
+            fetch('/api/mood-history', { headers: { Accept: 'application/json' } }),
+        ]);
+        if (!summaryResponse.ok || !historyResponse.ok) return;
+
+        const summary = await summaryResponse.json();
+        const history = await historyResponse.json();
+        const mood = document.getElementById('dashboard-mood');
+        const loginCount = document.getElementById('dashboard-login-count');
+
+        mood.textContent = summary.today_mood
+            ? `${summary.today_mood.mood_score}/5 ${mood.dataset.moodLabel} · ${summary.today_mood.stress_level}/10 ${mood.dataset.stressLabel}\n${mood.dataset.journalLabel}: ${summary.today_mood.note || mood.dataset.noJournal}`
+            : mood.dataset.emptyText;
+        mood.style.whiteSpace = 'pre-line';
+        loginCount.innerHTML = `<strong>${summary.login_count} ${loginCount.dataset.label}</strong>`;
+        if (summary.last_login_at) renderLoginTime(summary.last_login_at);
+        chart.data.labels = history.labels;
+        chart.data.datasets[0].data = history.mood;
+        chart.data.datasets[1].data = history.stress;
+        chart.update();
+        noChartData.hidden = !history.mood.some(value => value !== null);
+    } catch (error) {
+        console.error('Unable to refresh dashboard data.', error);
+    }
+};
+
+updateDashboard();
+window.addEventListener('focus', updateDashboard);
+window.addEventListener('storage', (event) => {
+    if (event.key === 'angaza-checkin-updated') updateDashboard();
+});
+})();
 </script>
 {% endblock %}

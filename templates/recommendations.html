@@ -1,171 +1,220 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card" style="max-width: 900px; margin: 2rem auto;">
-    <h2>{{ t.get('recommendations_title', 'Wellness Recommendations') }}</h2>
+<style>
+    .hospital-finder { max-width: 900px; margin: 2rem auto; }
+    .personal-recommendations { max-width: 900px; margin: 2rem auto 0; }
+    .recommendation-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0.75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+    .recommendation-tab { min-height: 100%; padding: 1rem; border: 1px solid var(--color-border); border-top: 3px solid var(--color-sage); border-radius: 6px; background: var(--color-surface); color: var(--color-text); transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease; }
+    .recommendation-tab:hover, .recommendation-tab:focus-visible { border-color: var(--color-mint); background: var(--color-surface-raised); transform: translateY(-2px); outline: none; }
+    @media (prefers-reduced-motion: reduce) { .recommendation-tab { transition: none; } }
+    .hospital-search { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0; }
+    .hospital-search input { flex: 1 1 240px; min-width: 0; padding: 0.8rem; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg); color: var(--color-text); }
+    .hospital-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; }
+    .hospital-actions .button { display: inline-flex; align-items: center; justify-content: center; padding: 0.65rem 1rem; border: 0; border-radius: 6px; background: var(--color-mint); color: var(--color-bg); font-weight: 700; text-decoration: none; cursor: pointer; }
+    .hospital-actions .secondary { border: 1px solid rgba(110,231,183,0.5); background: transparent; color: var(--color-mint); }
+    .hospital-status { display: flex; align-items: center; gap: 0.65rem; min-height: 1.5rem; color: #cbd5e1; }
+    .hospital-status[aria-busy="true"]::before { width: 1rem; height: 1rem; border: 2px solid rgba(110,231,183,0.25); border-top-color: var(--color-mint); border-radius: 50%; content: ""; animation: hospital-spin 0.8s linear infinite; }
+    .nearest-option { margin: 1.25rem 0; padding: 1rem; border-left: 4px solid var(--color-sage); background: rgba(134,169,143,0.08); }
+    .facility-list { display: grid; gap: 0.75rem; margin-top: 1rem; }
+    .facility-item { padding: 1rem; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); }
+    .facility-item h4, .nearest-option h3 { margin: 0 0 0.4rem; }
+    .facility-item p, .nearest-option p { margin: 0.35rem 0 0.8rem; color: #cbd5e1; }
+    .hospital-fallback { margin-top: 1rem; padding: 1rem; border-left: 4px solid #ffc864; background: rgba(255,200,100,0.08); }
+    .hospital-fallback a { color: var(--color-mint); }
+    @keyframes hospital-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .hospital-status[aria-busy="true"]::before { animation-duration: 2s; } }
+</style>
+<section class="card personal-recommendations" aria-labelledby="personal-recommendations-title">
+    <h2 id="personal-recommendations-title">{{ t.get('personalized_recommendations', 'Recommendations based on your assessment') }}</h2>
     {% if assessment %}
-        <p>{{ t.get('last_assessment_score', 'Your last assessment score was') }} <strong>{{ assessment.score }}</strong> ({{ assessment.severity }}).</p>
-        <div class="status-card" style="border-left: 4px solid {{ severity_data.color if severity_data else '#64ffda' }}; padding: 1rem; margin-bottom: 1rem; background: rgba(255,255,255,0.04);">
-            <strong>{{ t.get('severity_label', 'Severity') }}:</strong> {{ severity_data.label if severity_data else assessment.severity }}<br />
-            {{ severity_data.message if severity_data else '' }}
-            {% if severity_data and severity_data.label == 'Severe' %}
-                <p style="margin-top:0.75rem; font-weight:700;">{{ t.get('urgent_recommendation', 'Please seek urgent help and use the Emergency section if needed.') }} <a href="/emergency">{{ t.get('emergency_link_text', 'View Emergency resources') }}</a></p>
-            {% endif %}
-        </div>
-        <div class="card-list">
-            {% for tip in tips %}
-                <div class="card small-card">
-                    <h4>• {{ tip }}</h4>
-                </div>
-            {% endfor %}
-        </div>
-
-        <div class="card" style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.05);">
-            <h3>{{ t.get('hospital_recommendation_title', 'Hospital Recommendation') }}</h3>
-            <p>{{ t.get('diagnostic_disclaimer', 'This is not a diagnostic tool. It provides nearby care suggestions only.') }}</p>
-            <div id="hospital-recommendation-widget">
-                <p>{{ t.get('hospital_recommendation_description', 'Get nearby hospitals and clinics based on your location, or enter a town if location access is denied.') }}</p>
-                <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
-                    <button id="locate-button" class="button">{{ t.get('use_my_location', 'Use my location') }}</button>
-                    <button id="manual-button" class="button button-secondary">{{ t.get('enter_town_manually', 'Enter town manually') }}</button>
-                </div>
-                <div id="location-status" style="margin-bottom:1rem; color:#cbd5e1;"></div>
-                <div id="manual-location-form" style="display:none; margin-bottom:1rem;">
-                    <input id="manual-location-input" type="text" placeholder="{{ t.get('manual_location_placeholder', 'Town, city or neighborhood') }}" style="width:100%; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:#0b1120; color:#edf2fb;" />
-                    <button id="manual-location-search" class="button" style="margin-top:0.75rem;">{{ t.get('search_location', 'Search location') }}</button>
-                    <div id="geocode-results" style="margin-top:0.75rem;"></div>
-                </div>
-                <div id="facility-results"></div>
-            </div>
-        </div>
+        <p>{{ t.get('based_on_latest_assessment', 'Based on your latest assessment responses:') }}</p>
+        <p>{{ t.get('recommendation_disclaimer', 'These supportive suggestions are not a diagnosis or a substitute for professional care.') }}</p>
+        {% if personalized_tips %}
+        <ul class="recommendation-tabs">
+            {% for tip in personalized_tips %}<li class="recommendation-tab" tabindex="0">{{ tip }}</li>{% endfor %}
+        </ul>
+        {% endif %}
     {% else %}
-        <p>{{ t.get('no_assessment_recorded', 'No assessment recorded yet.') }} {{ t.get('complete_assessment', 'Complete an') }} <a href="/assessment">{{ t.get('assessment_link', 'assessment') }}</a> {{ t.get('to_receive_tips', 'to receive tailored tips.') }}</p>
+        <p>{{ t.get('no_personalized_recommendations', 'Complete an assessment to get recommendations based on your answers.') }} <a href="/assessment">{{ t.get('assessment', 'Assessment') }}</a></p>
     {% endif %}
-</div>
+</section>
+<section class="card hospital-finder" aria-labelledby="hospital-finder-title">
+    <h2 id="hospital-finder-title">{{ t.get('hospital_recommendation', 'Hospital Recommendation') }}</h2>
+    <p>{{ t.get('find_nearby_hospitals', 'Find nearby hospitals and clinics, or search by town or city.') }}</p>
+
+    <form id="hospital-search-form" class="hospital-search">
+        <label for="hospital-location-input" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">{{ t.get('search_town_city', 'Search town or city') }}</label>
+        <input id="hospital-location-input" type="search" placeholder="{{ t.get('search_location', 'Search location (town or city)') }}" autocomplete="address-level2" maxlength="160" />
+        <div class="hospital-actions">
+            <button class="button" type="submit">{{ t.get('search', 'Search') }}</button>
+            <button class="button secondary" id="use-current-location" type="button">{{ t.get('use_my_location', 'Use my location') }}</button>
+        </div>
+    </form>
+
+    <div id="hospital-status" class="hospital-status" role="status" aria-live="polite" aria-busy="false">{{ t.get('requesting_location', 'Requesting your location…') }}</div>
+    <section id="nearest-option" class="nearest-option" aria-live="polite" hidden></section>
+    <section id="facility-results" aria-live="polite"></section>
+    <aside id="hospital-fallback" class="hospital-fallback" role="note" hidden>
+        <p id="fallback-message"></p>
+        <p><a id="fallback-maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=hospitals+near+me" target="_blank" rel="noopener noreferrer">{{ t.get('search_hospitals_maps', 'Search hospitals on Google Maps') }}</a></p>
+        <p>{{ t.get('emergency_map_note', 'If this is an emergency, call your local emergency number. In Kenya, call') }} <a href="tel:999">999</a> {{ t.get('or', 'or') }} <a href="tel:112">112</a>, {{ t.get('or_view', 'or view the') }} <a href="/emergency">{{ t.get('emergency_contacts_link', 'emergency contacts') }}</a>.</p>
+    </aside>
+    <p style="margin-top:1rem;font-size:0.85rem;color:#94a3b8;">{{ t.get('facility_data_credit', 'Facility data') }} © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
+</section>
 
 <script>
-    const score = {{ assessment.score if assessment else 'null' }};
-    const severityData = {{ severity_data | tojson if severity_data else 'null' }};
-    const locateButton = document.getElementById('locate-button');
-    const manualButton = document.getElementById('manual-button');
-    const locationStatus = document.getElementById('location-status');
-    const manualForm = document.getElementById('manual-location-form');
-    const manualInput = document.getElementById('manual-location-input');
-    const manualSearch = document.getElementById('manual-location-search');
-    const geocodeResults = document.getElementById('geocode-results');
-    const facilityResults = document.getElementById('facility-results');
+(() => {
+    const copy = {{ {
+        'clinic': t.get('clinic'), 'hospital': t.get('hospital'), 'away': t.get('away'),
+        'requestingLocation': t.get('requesting_location'),
+        'directions': t.get('get_directions'), 'nearestDirections': t.get('directions_to_nearest'),
+        'facilityDetails': t.get('facility_result_details'), 'findingFacilities': t.get('finding_facilities'),
+        'noFacilities': t.get('nearby_facilities_missing'), 'tryNearby': t.get('nearby_facilities_suggestion'),
+        'nearbyHeading': t.get('nearby_facilities_heading'), 'oneFacility': t.get('nearby_facility_found'),
+        'manyFacilities': t.get('nearby_facilities_found'), 'facilityError': t.get('nearby_facility_error'),
+        'facilityFailed': t.get('nearby_facility_failed'), 'findingLocation': t.get('location_finding'),
+        'locationFailed': t.get('location_failed'), 'locationUnavailable': t.get('location_unavailable'),
+        'permissionFailed': t.get('location_permission_failed'), 'manualSuggestion': t.get('location_manual_suggestion'),
+        'checkSuggestion': t.get('location_check_suggestion'), 'queryRequired': t.get('location_query_required'),
+    }|tojson }};
+    const form = document.getElementById('hospital-search-form');
+    const locationInput = document.getElementById('hospital-location-input');
+    const currentLocationButton = document.getElementById('use-current-location');
+    const status = document.getElementById('hospital-status');
+    const nearestOption = document.getElementById('nearest-option');
+    const results = document.getElementById('facility-results');
+    const fallback = document.getElementById('hospital-fallback');
+    const fallbackMessage = document.getElementById('fallback-message');
+    const fallbackMapsLink = document.getElementById('fallback-maps-link');
 
-    const recText = {
-        noFacilitiesFound: {{ t.get('no_facilities_found', 'No nearby facilities were found. Please check the Emergency section or call your local helpline.') | tojson }},
-        directionsLink: {{ t.get('directions_link_text', 'Get directions') | tojson }},
-    };
-
-    function setStatus(message) {
-        locationStatus.textContent = message;
+    function setStatus(message, loading = false) {
+        status.textContent = message;
+        status.setAttribute('aria-busy', String(loading));
     }
 
-    function clearResults() {
-        facilityResults.innerHTML = '';
+    function mapsSearchUrl(location) {
+        const query = location ? `hospitals near ${location.lat},${location.lng}` : 'hospitals near me';
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
     }
 
-    function renderFacilities(data) {
-        clearResults();
-        if (!data || !data.facilities || data.facilities.length === 0) {
-            const fallbackText = data && data.fallback ? data.fallback.text : '';
-            const helplineText = data && data.fallback && data.fallback.helpline ? `<p><strong>{{ t.get('helpline_label', 'Helpline') }}:</strong> ${data.fallback.helpline}</p>` : '';
-            facilityResults.innerHTML = `<div class="card small-card" style="background:#1e293b;"><p>${recText.noFacilitiesFound}</p><p>${fallbackText}</p>${helplineText}</div>`;
-            return;
-        }
-        const list = document.createElement('div');
-        list.style.display = 'grid';
-        list.style.gap = '0.75rem';
-        data.facilities.forEach((facility) => {
-            const item = document.createElement('div');
-            item.className = 'card small-card';
-            item.innerHTML = `<h4>${facility.name}</h4><p>${facility.address}</p><p>${facility.distance} km away</p><a href="${facility.maps_url}" target="_blank" rel="noopener noreferrer">${recText.directionsLink}</a>`;
-            list.appendChild(item);
-        });
-        facilityResults.appendChild(list);
+    function directionsUrl(facility) {
+        const destination = Number.isFinite(Number(facility.lat)) && Number.isFinite(Number(facility.lng))
+            ? `${facility.lat},${facility.lng}`
+            : facility.name;
+        return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
     }
 
-    async function fetchRecommendations(lat, lng) {
-        setStatus('{{ t.get('searching_nearby', 'Searching for nearby facilities...') }}');
-        clearResults();
+    function showFallback(message, location) {
+        fallbackMessage.textContent = message;
+        fallbackMapsLink.href = mapsSearchUrl(location);
+        fallback.hidden = false;
+    }
+
+    function makeFacilityCard(facility, prominent = false) {
+        const card = document.createElement('article');
+        card.className = prominent ? '' : 'facility-item';
+        const heading = document.createElement(prominent ? 'h3' : 'h4');
+        heading.textContent = facility.name;
+        const details = document.createElement('p');
+        const type = facility.type === 'clinic' ? copy.clinic : copy.hospital;
+        details.textContent = copy.facilityDetails.replace('{type}', type).replace('{distance}', facility.distance_km) + (facility.address ? ` · ${facility.address}` : '');
+        const action = document.createElement('a');
+        action.className = 'button';
+        action.href = directionsUrl(facility);
+        action.target = '_blank';
+        action.rel = 'noopener noreferrer';
+        action.textContent = prominent ? copy.nearestDirections : copy.directions;
+        card.append(heading, details, action);
+        return card;
+    }
+
+    async function loadFacilities(location) {
+        fallback.hidden = true;
+        nearestOption.hidden = true;
+        nearestOption.replaceChildren();
+        results.replaceChildren();
+        setStatus(copy.findingFacilities, true);
         try {
             const response = await fetch('/api/recommend', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({score: score, lat: lat, lng: lng}),
+                body: JSON.stringify(location),
             });
             const data = await response.json();
             if (!response.ok) {
-                setStatus(data.error || '{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
+                throw new Error(data.error || copy.facilityError);
+            }
+            const facilities = data.facilities || [];
+            if (!facilities.length) {
+                setStatus(copy.noFacilities);
+                showFallback(copy.tryNearby, location);
                 return;
             }
-            setStatus('{{ t.get('recommendations_found', 'Nearby facilities found:') }}');
-            renderFacilities(data);
+            const nearest = data.nearest || facilities[0];
+            nearestOption.append(makeFacilityCard(nearest, true));
+            nearestOption.hidden = false;
+            const heading = document.createElement('h3');
+            heading.textContent = copy.nearbyHeading;
+            const list = document.createElement('div');
+            list.className = 'facility-list';
+            facilities.forEach((facility) => list.append(makeFacilityCard(facility)));
+            results.append(heading, list);
+            setStatus(`${facilities.length} ${facilities.length === 1 ? copy.oneFacility : copy.manyFacilities}`);
         } catch (error) {
-            setStatus('{{ t.get('facility_query_failed', 'Facility search failed. Please try again later.') }}');
+            setStatus(error.message || copy.facilityFailed);
+            showFallback(copy.manualSuggestion, location);
         }
     }
 
-    function showManualForm() {
-        manualForm.style.display = 'block';
-        setStatus('{{ t.get('manual_enter_prompt', 'Enter your town or city to find nearby locations.') }}');
-    }
-
-    locateButton?.addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            setStatus('{{ t.get('geolocation_unsupported', 'Geolocation is not supported by your browser.') }}');
-            showManualForm();
-            return;
-        }
-        setStatus('{{ t.get('locating', 'Locating...') }}');
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const {latitude, longitude} = position.coords;
-            await fetchRecommendations(latitude, longitude);
-        }, (error) => {
-            setStatus('{{ t.get('location_denied', 'Location access denied. You can enter your town manually below.') }}');
-            showManualForm();
-        }, {timeout: 15000});
-    });
-
-    manualButton?.addEventListener('click', () => {
-        showManualForm();
-    });
-
-    manualSearch?.addEventListener('click', async () => {
-        const query = manualInput.value.trim();
-        if (!query) {
-            setStatus('{{ t.get('enter_location_query', 'Please enter a location query.') }}');
-            return;
-        }
-        setStatus('{{ t.get('geocoding', 'Looking up location...') }}');
-        geocodeResults.innerHTML = '';
+    async function searchTown(query) {
+        fallback.hidden = true;
+        setStatus(copy.findingLocation, true);
         try {
             const response = await fetch('/api/geocode', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({query}),
             });
-            const data = await response.json();
-            if (!response.ok || !data.results || data.results.length === 0) {
-                setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
-                return;
+            const location = await response.json();
+            if (!response.ok) {
+                throw new Error(location.error || copy.locationFailed);
             }
-            geocodeResults.innerHTML = data.results.map((result, index) => `
-                <div class="card small-card" style="padding:0.75rem;"><p><strong>${result.display_name}</strong></p><button class="button" data-lat="${result.lat}" data-lng="${result.lon}">{{ t.get('use_this_location', 'Use this location') }}</button></div>
-            `).join('');
-            geocodeResults.querySelectorAll('button[data-lat]').forEach(button => {
-                button.addEventListener('click', async (event) => {
-                    const lat = event.target.dataset.lat;
-                    const lng = event.target.dataset.lng;
-                    await fetchRecommendations(lat, lng);
-                });
-            });
-            setStatus('{{ t.get('select_location', 'Select the best match for your location.') }}');
+            await loadFacilities(location);
         } catch (error) {
-            setStatus('{{ t.get('geocode_failed', 'Location lookup failed. Please try a different town or city.') }}');
+            setStatus(error.message || copy.locationFailed);
+            showFallback(copy.checkSuggestion);
         }
+    }
+
+    function requestCurrentLocation() {
+        if (!navigator.geolocation) {
+            setStatus(copy.locationUnavailable);
+            showFallback(copy.manualSuggestion);
+            return;
+        }
+        setStatus(copy.requestingLocation, true);
+        navigator.geolocation.getCurrentPosition(
+            (position) => loadFacilities({lat: position.coords.latitude, lng: position.coords.longitude}),
+            () => {
+                setStatus(copy.permissionFailed);
+                showFallback(copy.manualSuggestion);
+            },
+            {enableHighAccuracy: true, timeout: 12000, maximumAge: 300000}
+        );
+    }
+
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const query = locationInput.value.trim();
+        if (query.length < 2) {
+            setStatus(copy.queryRequired);
+            locationInput.focus();
+            return;
+        }
+        searchTown(query);
     });
+    currentLocationButton.addEventListener('click', requestCurrentLocation);
+    requestCurrentLocation();
+})();
 </script>
 {% endblock %}

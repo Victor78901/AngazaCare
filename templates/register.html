@@ -3,6 +3,7 @@
 <div class="card" style="max-width: 540px; margin: 2rem auto;">
     <h2>{{ t.get('register_title', 'Register') }}</h2>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="form-field">
             <label for="name">{{ t.get('full_name', 'Full Name') }}</label>
             <input type="text" name="name" id="name" required />
@@ -13,7 +14,17 @@
         </div>
         <div class="form-field">
             <label for="password">{{ t.get('password', 'Password') }}</label>
-            <input type="password" name="password" id="password" required />
+            <div class="password-input-wrap">
+                <input type="password" name="password" id="password" autocomplete="new-password" minlength="12" maxlength="128" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{12,128}" title="{{ t.get('password_policy_hint') }}" data-password-policy data-password-feedback="password-policy" data-password-min-message="{{ t.get('password_too_short') }}" data-password-max-message="{{ t.get('password_too_long') }}" data-password-complexity-message="{{ t.get('password_complexity') }}" data-password-valid-message="{{ t.get('password_valid') }}" data-password-hint="{{ t.get('password_policy_hint') }}" data-password-mismatch-message="{{ t.get('password_mismatch') }}" required />
+                <button class="password-visibility-toggle" type="button" aria-controls="password" aria-label="{{ t.get('show_password') }}" aria-pressed="false" title="{{ t.get('show_password') }}" data-show-label="{{ t.get('show_password') }}" data-hide-label="{{ t.get('hide_password') }}" data-password-toggle>
+                    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+                        <circle cx="12" cy="12" r="3" />
+                        <path class="password-eye-slash" d="M3 3l18 18" />
+                    </svg>
+                </button>
+            </div>
+            <small id="password-policy" aria-live="polite">{{ t.get('password_policy_hint') }}</small>
         </div>
         <button class="btn" type="submit">{{ t.get('create_account', 'Create Account') }}</button>
     </form>

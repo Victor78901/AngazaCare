@@ -1,0 +1,98 @@
+<section class="admin-metrics" aria-label="{{ t.get('engagement_overview') }}">
+    <article class="admin-metric">
+        <span>{{ t.get('active_users_30_days') }}</span>
+        <strong>{{ total_active_users }}</strong>
+    </article>
+    <article class="admin-metric">
+        <span>{{ t.get('assessments_taken') }}</span>
+        <strong>{{ total_assessments }}</strong>
+    </article>
+    <article class="admin-metric">
+        <span>{{ t.get('chatbot_interactions') }}</span>
+        <strong>{{ total_chat_interactions }}</strong>
+    </article>
+</section>
+
+<section class="admin-activity-section" aria-labelledby="chat-activity-heading">
+    <div class="admin-section-heading">
+        <div>
+            <h2 id="chat-activity-heading">{{ t.get('recent_chatbot_activity') }}</h2>
+            <p>{{ t.get('scope_consent_notice').format(scope=t.get('scope_all_patients') if activity_scope == 'All patient accounts' else t.get('scope_assigned_patients')) }}</p>
+        </div>
+    </div>
+    <div class="admin-table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{{ t.get('timestamp') }}</th>
+                    <th>{{ t.get('user_session') }}</th>
+                    <th>{{ t.get('prompt') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for interaction in recent_chats %}
+                <tr>
+                    <td><time datetime="{{ interaction.created_at.isoformat() }}">{{ interaction.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></td>
+                    <td>{% if interaction.user_id %}User #{{ interaction.user_id }}{% else %}Guest {{ interaction.session_hash[:8] if interaction.session_hash else '' }}{% endif %}</td>
+                    <td>
+                        {% if interaction.user and interaction.user.consent_to_clinician_review %}
+                            <pre class="admin-activity-message">{{ interaction.user_message }}</pre>
+                        {% else %}
+                            <span class="admin-privacy-note">{{ t.get('prompt_withheld') }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="admin-empty-state">{{ t.get('no_chat_activity') }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="admin-activity-section" aria-labelledby="assessment-activity-heading">
+    <div class="admin-section-heading">
+        <div>
+            <h2 id="assessment-activity-heading">{{ t.get('recent_assessment_results') }}</h2>
+            <p>{{ t.get('assessment_consent_notice') }}</p>
+        </div>
+    </div>
+    <div class="admin-table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{{ t.get('timestamp') }}</th>
+                    <th>{{ t.get('user_id') }}</th>
+                    <th>{{ t.get('clinical_summary_responses') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for assessment in recent_assessments %}
+                <tr>
+                    <td><time datetime="{{ assessment.created_at.isoformat() }}">{{ assessment.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></td>
+                    <td>User #{{ assessment.user_id }}</td>
+                    <td>
+                        {% if assessment.has_consent %}
+                            <strong>{{ assessment.score }}</strong> - {{ assessment.severity }}
+                            {% if assessment.details %}
+                            <details class="admin-response-details">
+                                <summary>{{ t.get('view_responses') }}</summary>
+                                <ol>
+                                    {% for detail in assessment.details %}
+                                    <li>{{ detail.question }} <strong>{{ detail.answer }}</strong></li>
+                                    {% endfor %}
+                                </ol>
+                            </details>
+                            {% endif %}
+                        {% else %}
+                            <span class="admin-privacy-note">{{ t.get('score_responses_withheld') }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="admin-empty-state">{{ t.get('no_assessments') }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>

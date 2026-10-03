@@ -2,17 +2,32 @@
 {% block content %}
 <div class="card" style="max-width: 540px; margin: 2rem auto;">
     <h2>{{ t.get('login_title', 'Login') }}</h2>
-    <form method="POST">
+    <form method="POST" action="{{ url_for('login') }}" aria-label="{{ t.get('login_title', 'Login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <div class="form-field">
             <label for="email">{{ t.get('email', 'Email') }}</label>
-            <input type="email" name="email" id="email" required />
+            <input type="email" name="email" id="email" autocomplete="email" maxlength="120" required />
         </div>
         <div class="form-field">
             <label for="password">{{ t.get('password', 'Password') }}</label>
-            <input type="password" name="password" id="password" required />
+            <div class="password-input-wrap">
+                <input type="password" name="password" id="password" autocomplete="current-password" required />
+                <button class="password-visibility-toggle" type="button" aria-controls="password" aria-label="{{ t.get('show_password') }}" aria-pressed="false" title="{{ t.get('show_password') }}" data-show-label="{{ t.get('show_password') }}" data-hide-label="{{ t.get('hide_password') }}" data-password-toggle>
+                    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+                        <circle cx="12" cy="12" r="3" />
+                        <path class="password-eye-slash" d="M3 3l18 18" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="login-options">
+            <input type="checkbox" name="remember" id="remember" />
+            <label for="remember">{{ t.get('remember_me', 'Remember me') }}</label>
         </div>
         <button class="btn" type="submit">{{ t.get('login_button', 'Login') }}</button>
     </form>
+    <p><a href="{{ url_for('forgot_password') }}">{{ t.get('forgot_password', 'Forgot Password?') }}</a></p>
     <p style="margin-top: 1rem;">{{ t.get('need_account', 'Need an account?') }} <a href="/register">{{ t.get('register_here', 'Register here') }}</a>.</p>
 </div>
 {% endblock %}

@@ -3,44 +3,104 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AngazaCare - {{ title if title else 'Mental Health Support' }}</title>
+    <title>AngazaCare - {{ title if title else t.get('app_title') }}</title>
     <link rel="stylesheet" href="/static/css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="/static/js/main.js"></script>
     <style>
-        #mw-ai-bubble {
+        #mw-ai-controls {
             position: fixed;
             bottom: 20px;
             right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 12px;
+        }
+        #mw-ai-bubble {
             width: 56px;
             height: 56px;
             border-radius: 50%;
             border: none;
-            background: linear-gradient(135deg, #3fa8a3, #83f0d6);
+            background: linear-gradient(135deg, var(--color-sage), var(--color-mint));
             color: #fff;
             font-weight: 700;
             box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
             cursor: pointer;
             display: grid;
             place-items: center;
-            z-index: 9999;
+            transition: transform 300ms ease, box-shadow 300ms ease;
         }
         #mw-ai-voice-btn {
-            position: fixed;
-            bottom: 88px;
-            right: 20px;
             width: 44px;
             height: 44px;
             border-radius: 50%;
             border: none;
-            background: #ff8a64;
+            background: var(--color-sage);
             color: #fff;
             font-size: 1.1rem;
             cursor: pointer;
             display: grid;
             place-items: center;
             box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
-            z-index: 9998;
+            transition: transform 300ms ease, box-shadow 300ms ease;
+        }
+        #mw-ai-controls button:hover,
+        #mw-ai-controls button:focus-visible {
+            transform: scale(1.07);
+            box-shadow: 0 0 0 4px var(--color-mint-soft), 0 12px 28px rgba(0, 0, 0, 0.28);
+        }
+        #mw-companion-tooltip {
+            position: absolute;
+            right: calc(100% + 14px);
+            bottom: 0;
+            width: min(270px, calc(100vw - 112px));
+            padding: 14px 16px;
+            border: 1px solid var(--color-mint);
+            border-radius: 14px;
+            background: var(--color-surface);
+            color: var(--color-text);
+            box-shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(10px) scale(0.97);
+            transform-origin: right bottom;
+            transition: opacity 300ms ease, transform 300ms ease, visibility 300ms ease;
+            pointer-events: none;
+        }
+        #mw-companion-tooltip::after {
+            position: absolute;
+            right: -6px;
+            bottom: 20px;
+            width: 10px;
+            height: 10px;
+            border-top: 1px solid var(--color-mint);
+            border-right: 1px solid var(--color-mint);
+            background: var(--color-surface);
+            content: "";
+            transform: rotate(45deg);
+        }
+        #mw-companion-tooltip strong,
+        #mw-companion-tooltip span {
+            position: relative;
+            display: block;
+        }
+        #mw-companion-tooltip strong {
+            margin-bottom: 3px;
+            color: var(--color-mint);
+            font-size: 0.95rem;
+        }
+        #mw-companion-tooltip span {
+            color: var(--color-muted);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        #mw-ai-controls:hover #mw-companion-tooltip,
+        #mw-ai-controls:focus-within #mw-companion-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0) scale(1);
         }
         #mw-ai-chat-container {
             position: fixed;
@@ -48,7 +108,7 @@
             right: 20px;
             width: min(380px, calc(100vw - 32px));
             max-height: 520px;
-            background: #0f172a;
+            background: var(--color-surface);
             border-radius: 24px;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
             display: none;
@@ -64,15 +124,15 @@
             align-items: center;
             justify-content: space-between;
             padding: 14px 16px;
-            background: #07101f;
-            color: #e2f7f1;
+            background: var(--color-bg);
+            color: var(--color-text);
             font-weight: 700;
             font-size: 1rem;
         }
         .mw-ai-header button {
             background: transparent;
             border: none;
-            color: #e2f7f1;
+            color: var(--color-text);
             font-size: 1.4rem;
             cursor: pointer;
         }
@@ -82,7 +142,7 @@
             flex-direction: column;
             gap: 12px;
             overflow-y: auto;
-            background: linear-gradient(180deg, #07101f 0%, #0f172a 100%);
+            background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface) 100%);
             flex: 1;
         }
         .mw-ai-message {
@@ -95,14 +155,14 @@
         }
         .mw-ai-message.user {
             align-self: flex-end;
-            background: #bff7e2;
-            color: #0f172a;
+            background: var(--color-mint);
+            color: var(--color-bg);
             border-bottom-right-radius: 4px;
         }
         .mw-ai-message.ai {
             align-self: flex-start;
-            background: #16213a;
-            color: #edf2fb;
+            background: var(--color-surface-raised);
+            color: var(--color-text);
             border-bottom-left-radius: 4px;
         }
         .mw-ai-form {
@@ -110,7 +170,7 @@
             gap: 8px;
             align-items: center;
             padding: 14px 16px 16px;
-            background: #07101f;
+            background: var(--color-bg);
         }
         .mw-ai-form input {
             flex: 1;
@@ -118,15 +178,15 @@
             padding: 12px 14px;
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.14);
-            background: rgba(255, 255, 255, 0.06);
-            color: #f8fafc;
+            background: var(--color-surface);
+            color: var(--color-text);
             outline: none;
         }
         .mw-ai-form button {
             border: none;
             padding: 0 18px;
             border-radius: 999px;
-            background: #3fa8a3;
+            background: var(--color-mint-strong);
             color: #fff;
             cursor: pointer;
             font-weight: 700;
@@ -137,7 +197,7 @@
             padding: 0;
             border-radius: 50%;
             font-size: 1rem;
-            background: #497b7b;
+            background: var(--color-sage);
             display: grid;
             place-items: center;
         }
@@ -147,8 +207,8 @@
         }
         .mw-ai-error {
             padding: 12px 16px;
-            color: #ffd7e2;
-            background: #581c35;
+            color: #f2aaa0;
+            background: rgba(232, 131, 117, 0.16);
             font-size: 0.9rem;
         }
         .mw-ai-loading {
@@ -160,7 +220,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #83f0d6;
+            background: var(--color-mint);
             animation: mw-dot 1.2s infinite ease-in-out;
         }
         .mw-ai-dot:nth-child(2) { animation-delay: 0.2s; }
@@ -168,6 +228,22 @@
         @keyframes mw-dot {
             0%, 80%, 100% { opacity: 0.2; transform: translateY(0); }
             40% { opacity: 1; transform: translateY(-4px); }
+        }
+        @media (max-width: 480px) {
+            #mw-ai-controls {
+                right: 14px;
+                bottom: 14px;
+            }
+            #mw-companion-tooltip {
+                width: min(240px, calc(100vw - 100px));
+            }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #mw-ai-bubble,
+            #mw-ai-voice-btn,
+            #mw-companion-tooltip {
+                transition-duration: 1ms;
+            }
         }
     </style>
 </head>
@@ -180,23 +256,25 @@
                 </div>
                 <div class="nav-links">
                     {% if current_user.is_authenticated %}
-                        <a href="/dashboard">{{ t.get('dashboard', 'Dashboard') if t else 'Dashboard' }}</a>
-                        <a href="/assessment">{{ t.get('assessment', 'Assessment') if t else 'Assessment' }}</a>
-                        <a href="/mood_tracker">{{ t.get('mood_tracker', 'Mood Tracker') if t else 'Mood Tracker' }}</a>
-                        <a href="/recommendations">{{ t.get('recommendations', 'Recommendations') if t else 'Recommendations' }}</a>
-                        <a href="/emergency">{{ t.get('emergency', 'Emergency') if t else 'Emergency' }}</a>
-                        {% if current_user.role == 'psychiatrist' %}
-                            <a href="/admin">Admin</a>
+                        <a href="/dashboard" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>{{ t.get('dashboard', 'Dashboard') if t else 'Dashboard' }}</a>
+                        <a href="/assessment" class="{{ 'active' if request.endpoint == 'assessment' else '' }}" {% if request.endpoint == 'assessment' %}aria-current="page"{% endif %}>{{ t.get('assessment', 'Assessment') if t else 'Assessment' }}</a>
+                        <a href="/mood_tracker" class="{{ 'active' if request.endpoint == 'mood_tracker' else '' }}" {% if request.endpoint == 'mood_tracker' %}aria-current="page"{% endif %}>{{ t.get('mood_tracker', 'Mood Tracker') if t else 'Mood Tracker' }}</a>
+                        <a href="/recommendations" class="{{ 'active' if request.endpoint == 'recommendations' else '' }}" {% if request.endpoint == 'recommendations' %}aria-current="page"{% endif %}>{{ t.get('recommendations', 'Recommendations') if t else 'Recommendations' }}</a>
+                        <a href="/emergency" class="{{ 'active' if request.endpoint == 'emergency' else '' }}" {% if request.endpoint == 'emergency' %}aria-current="page"{% endif %}>{{ t.get('emergency', 'Emergency') if t else 'Emergency' }}</a>
+                        {% if current_user.role in ('psychiatrist', 'admin') %}
+                            <a href="/admin" class="{{ 'active' if request.endpoint in ('admin_dashboard', 'admin_user_detail') else '' }}" {% if request.endpoint in ('admin_dashboard', 'admin_user_detail') %}aria-current="page"{% endif %}>{{ t.get('admin', 'Admin') }}</a>
                         {% endif %}
                         <a href="/logout">{{ t.get('logout', 'Logout') if t else 'Logout' }}</a>
                     {% else %}
-                        <a href="/login">{{ t.get('login', 'Login') if t else 'Login' }}</a>
-                        <a href="/register">{{ t.get('register', 'Register') if t else 'Register' }}</a>
+                        <a href="/login" class="{{ 'active' if request.endpoint == 'login' else '' }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>{{ t.get('login', 'Login') if t else 'Login' }}</a>
+                        <a href="/register" class="{{ 'active' if request.endpoint == 'register' else '' }}" {% if request.endpoint == 'register' %}aria-current="page"{% endif %}>{{ t.get('register', 'Register') if t else 'Register' }}</a>
                     {% endif %}
                     <div class="lang-selector">
-                        <select id="lang-select" onchange="location.href='/set_language/' + this.value;" style="padding: 0.5rem; border-radius: 6px; border: 1px solid #64ffda; background: #0d1b2a; color: #64ffda; font-weight: 600; cursor: pointer;">
+                        <select id="lang-select" onchange="location.href='/set_language/' + this.value;" style="padding: 0.5rem; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-mint); font-weight: 600; cursor: pointer;">
                             <option value="en" {% if current_lang == 'en' %}selected{% endif %}>🇬🇧 English</option>
                             <option value="sw" {% if current_lang == 'sw' %}selected{% endif %}>🇰🇪 Kiswahili</option>
+                            <option value="ki" {% if current_lang == 'ki' %}selected{% endif %}>🇰🇪 KI · Gĩkũyũ</option>
+                            <option value="kln" {% if current_lang == 'kln' %}selected{% endif %}>🇰🇪 KL · Kalenjin</option>
                         </select>
                     </div>
                 </div>
@@ -204,6 +282,7 @@
         </div>
     </header>
     <main class="container">
+        {% if current_lang in ('ki', 'kln') %}<p class="alert alert-warning" role="note">{{ t.get('translation_review_notice') }}</p>{% endif %}
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -220,7 +299,7 @@
     <div id="mw-ai-chat-container">
         <div class="mw-ai-header">
             <span>{{ t.get('ai_assistant', 'AngazaCare AI') if t else 'AngazaCare AI' }}</span>
-            <button id="mw-close-chat" aria-label="Close chat window">×</button>
+            <button id="mw-close-chat" aria-label="{{ t.get('close_chat') }}">×</button>
         </div>
         <div id="mw-ai-messages" class="mw-ai-messages"></div>
         <div id="mw-ai-error" class="mw-ai-error" hidden>{{ t.get('ai_resting', 'AngazaCare AI is resting, please try again') if t else 'AngazaCare AI is resting, please try again' }}</div>
@@ -230,8 +309,14 @@
             <button type="submit">{{ t.get('send', 'Send') if t else 'Send' }}</button>
         </form>
     </div>
-    <button id="mw-ai-bubble" aria-label="Open AngazaCare AI chat">AI</button>
-    <button id="mw-ai-voice-btn" aria-label="{{ t.get('voice_chat_button', 'Voice Chat') if t else 'Voice Chat' }}">🎧</button>
+    <div id="mw-ai-controls">
+        <div id="mw-companion-tooltip" role="tooltip" aria-live="polite">
+            <strong>{{ t.get('companion_greeting', 'Need someone to talk to?') }}</strong>
+            <span>{{ t.get('companion_message', 'Your AI wellness companion is here.') }}</span>
+        </div>
+        <button id="mw-ai-voice-btn" aria-describedby="mw-companion-tooltip" aria-label="{{ t.get('voice_chat_button', 'Voice Chat') if t else 'Voice Chat' }}">🎧</button>
+        <button id="mw-ai-bubble" aria-describedby="mw-companion-tooltip" aria-label="{{ t.get('open_ai_chat', 'Open AngazaCare AI chat') }}">AI</button>
+    </div>
 
     <script>
         const mwChatContainer = document.getElementById('mw-ai-chat-container');
